@@ -10,5 +10,4 @@ export interface SendMessagesBody {
   token: string;
   channels: string[];
   message: string;
-  repeatBypass?: boolean;
 }

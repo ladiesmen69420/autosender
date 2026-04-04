@@ -59,17 +59,13 @@ router.post("/send-messages", async (req, res) => {
     return;
   }
 
-  const { token, channels, message, repeatBypass } = parsed.data;
+  const { token, channels, message } = parsed.data;
   const results: Array<{ channelId: string; success: boolean; error?: string }> = [];
   let sent = 0;
   let failed = 0;
 
   for (const channelId of channels) {
-    let content = message;
-    if (repeatBypass) {
-      const rand = Math.floor(Math.random() * 1e15).toString();
-      content = `${message}\n${rand}`;
-    }
+    const content = message;
 
     try {
       const response = await fetch(
@@ -366,7 +362,6 @@ router.post("/sessions", async (req, res) => {
       channels: parsed.data.channels,
       message: parsed.data.message,
       delay: parsed.data.delay,
-      repeatBypass: parsed.data.repeatBypass ?? false,
       jitter: parsed.data.jitter ?? 0,
     })
     .returning();

@@ -224,8 +224,6 @@ components:
             type: string
         message:
           type: string
-        repeatBypass:
-          type: boolean
       required:
         - token
         - channels
@@ -383,8 +381,6 @@ components:
           type: string
         delay:
           type: integer
-        repeatBypass:
-          type: boolean
         jitter:
           type: integer
           description: Jitter percentage (0-100) to add random delay
@@ -412,8 +408,6 @@ components:
           type: string
         delay:
           type: integer
-        repeatBypass:
-          type: boolean
         jitter:
           type: integer
           nullable: true

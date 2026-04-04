@@ -26,7 +26,6 @@ export interface SendMessagesBody {
   token: string;
   channels: string[];
   message: string;
-  repeatBypass?: boolean;
 }
 
 export interface ChannelSendResult {
@@ -96,7 +95,6 @@ export interface CreateSessionBody {
   channels: string[];
   message: string;
   delay: number;
-  repeatBypass?: boolean;
   /** Jitter percentage (0-100) to add random delay */
   jitter?: number;
 }
@@ -108,7 +106,6 @@ export interface Session {
   channels: string[];
   message: string;
   delay: number;
-  repeatBypass?: boolean;
   jitter?: number | null;
   createdAt: string;
 }

@@ -38,7 +38,6 @@ export const SendMessagesBody = zod.object({
   token: zod.string(),
   channels: zod.array(zod.string()),
   message: zod.string(),
-  repeatBypass: zod.boolean().optional(),
 });
 
 export const SendMessagesResponse = zod.object({
@@ -128,7 +127,6 @@ export const ListSessionsResponseItem = zod.object({
   channels: zod.array(zod.string()),
   message: zod.string(),
   delay: zod.number(),
-  repeatBypass: zod.boolean().optional(),
   jitter: zod.number().nullish(),
   createdAt: zod.string(),
 });
@@ -143,7 +141,6 @@ export const CreateSessionBody = zod.object({
   channels: zod.array(zod.string()),
   message: zod.string(),
   delay: zod.number(),
-  repeatBypass: zod.boolean().optional(),
   jitter: zod
     .number()
     .optional()

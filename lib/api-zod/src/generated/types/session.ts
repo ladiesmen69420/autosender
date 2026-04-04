@@ -13,7 +13,6 @@ export interface Session {
   channels: string[];
   message: string;
   delay: number;
-  repeatBypass?: boolean;
   jitter?: number | null;
   createdAt: string;
 }

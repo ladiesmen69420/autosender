@@ -12,7 +12,6 @@ export interface CreateSessionBody {
   channels: string[];
   message: string;
   delay: number;
-  repeatBypass?: boolean;
   /** Jitter percentage (0-100) to add random delay */
   jitter?: number;
 }
