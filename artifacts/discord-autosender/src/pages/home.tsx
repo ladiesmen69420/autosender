@@ -410,9 +410,19 @@ export default function Home() {
       <aside className="w-52 bg-sidebar border-r border-sidebar-border flex flex-col shrink-0">
         <div className="px-4 py-5 border-b border-sidebar-border">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded bg-primary flex items-center justify-center glow-primary shrink-0">
-              <Zap className="w-4 h-4 text-white" />
-            </div>
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+              <rect width="28" height="28" rx="6" fill="url(#sbg)" />
+              {/* Shield */}
+              <path d="M14 5.5L20 8V15C20 18.3 17.3 20.8 14 22C10.7 20.8 8 18.3 8 15V8L14 5.5Z" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.8" />
+              {/* Lightning bolt */}
+              <path d="M15.5 9.5L11.5 15H14.5L12.5 19.5L17.5 13H14L15.5 9.5Z" fill="white" />
+              <defs>
+                <linearGradient id="sbg" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#7c3aed" />
+                  <stop offset="1" stopColor="#4c1d95" />
+                </linearGradient>
+              </defs>
+            </svg>
             <div>
               <div className="font-bold text-sm text-foreground leading-none">SentinelBot</div>
               <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest mt-0.5">v2.0</div>
@@ -480,7 +490,7 @@ export default function Home() {
               </Badge>
             )}
             <Badge variant="outline" className="font-mono text-[10px] border-border text-muted-foreground">
-              {logs.length} events
+              {logs.length} messages
             </Badge>
           </div>
         </header>
@@ -774,7 +784,7 @@ export default function Home() {
                               Message
                             </Label>
                             <Textarea
-                              placeholder="Message to broadcast..."
+                              placeholder="Message to send..."
                               value={campaign.message}
                               onChange={(e) => updateCampaign(campaign.id, { message: e.target.value })}
                               className="min-h-[80px] text-sm resize-y bg-input border-border focus-visible:ring-primary/50"
@@ -1076,7 +1086,6 @@ export default function Home() {
                   <p>1. Open Discord in your browser (discord.com)</p>
                   <p>2. Press F12 to open DevTools and go to the Network tab</p>
                   <p>3. Send a message or interact with the app to trigger a request</p>
-                  <p>4. Find a request to discord.com/api — check the Authorization header</p>
                   <p className="pt-1 text-amber-400/80">Warning: Never share your token. Treat it like a password.</p>
                 </div>
               </div>
@@ -1093,7 +1102,7 @@ export default function Home() {
                     <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Activity Log</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-[10px]">{logs.length} events</Badge>
+                    <Badge variant="outline" className="font-mono text-[10px]">{logs.length} messages</Badge>
                     <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground hover:text-foreground px-2"
                       onClick={() => setLogs([])}>Clear</Button>
                   </div>
@@ -1101,7 +1110,7 @@ export default function Home() {
                 <ScrollArea className="h-[calc(100vh-220px)]">
                   {logs.length === 0 ? (
                     <div className="flex items-center justify-center h-48 text-muted-foreground font-mono text-xs">
-                      No events logged yet...
+                      No messages logged yet...
                     </div>
                   ) : (
                     <div className="font-mono text-xs divide-y divide-border/40">
