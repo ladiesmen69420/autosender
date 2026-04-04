@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Discord AutoSender"
+version = "1.0.0"
+id = "artifacts/discord-autosender"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24296
+
+[services.development]
+run = "pnpm --filter @workspace/discord-autosender run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/discord-autosender", "run", "build" ]
+publicDir = "artifacts/discord-autosender/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24296"
+BASE_PATH = "/"

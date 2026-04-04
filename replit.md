@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+Discord AutoSender — a web-based tool to automatically send messages to Discord channels using a user token (selfbot). Dark-themed, command-center UI.
 
 ## Stack
 
@@ -15,6 +15,27 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite + Tailwind CSS (dark Discord theme)
+
+## Features
+
+- Token validation via Discord API v10
+- Multi-channel targeting
+- Configurable delay and repeat bypass
+- Live execution log with sent/failed counters
+- Saved presets/sessions stored in PostgreSQL
+
+## API Routes
+
+- `POST /api/discord/validate-token` — validate Discord user token
+- `POST /api/discord/send-messages` — send message to channels
+- `GET /api/discord/sessions` — list saved sessions
+- `POST /api/discord/sessions` — save a session
+- `DELETE /api/discord/sessions/:id` — delete a session
+
+## DB Schema
+
+- `sessions` — saved autosender configs (name, token, channels, message, delay, repeatBypass)
 
 ## Key Commands
 

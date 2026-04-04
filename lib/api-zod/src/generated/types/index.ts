@@ -6,4 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./channelSendResult";
+export * from "./createSessionBody";
+export * from "./deleteResult";
 export * from "./healthStatus";
+export * from "./sendMessagesBody";
+export * from "./sendResult";
+export * from "./session";
+export * from "./tokenValidationResult";
+export * from "./validateTokenBody";

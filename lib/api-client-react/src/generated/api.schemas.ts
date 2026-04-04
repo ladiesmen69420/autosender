@@ -8,3 +8,59 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface ValidateTokenBody {
+  token: string;
+}
+
+export interface TokenValidationResult {
+  valid: boolean;
+  username?: string;
+  discriminator?: string;
+  id?: string;
+  avatar?: string | null;
+  error?: string | null;
+}
+
+export interface SendMessagesBody {
+  token: string;
+  channels: string[];
+  message: string;
+  repeatBypass?: boolean;
+}
+
+export interface ChannelSendResult {
+  channelId: string;
+  success: boolean;
+  error?: string | null;
+}
+
+export interface SendResult {
+  sent: number;
+  failed: number;
+  results: ChannelSendResult[];
+}
+
+export interface CreateSessionBody {
+  name: string;
+  token: string;
+  channels: string[];
+  message: string;
+  delay: number;
+  repeatBypass?: boolean;
+}
+
+export interface Session {
+  id: number;
+  name: string;
+  token: string;
+  channels: string[];
+  message: string;
+  delay: number;
+  repeatBypass?: boolean;
+  createdAt: string;
+}
+
+export interface DeleteResult {
+  success: boolean;
+}

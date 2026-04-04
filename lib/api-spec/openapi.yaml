@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: discord
+    description: Discord autosender operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,96 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /discord/validate-token:
+    post:
+      operationId: validateToken
+      tags: [discord]
+      summary: Validate a Discord token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateTokenBody"
+      responses:
+        "200":
+          description: Token validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenValidationResult"
+
+  /discord/send-messages:
+    post:
+      operationId: sendMessages
+      tags: [discord]
+      summary: Send messages to Discord channels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessagesBody"
+      responses:
+        "200":
+          description: Messages sent result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendResult"
+
+  /discord/sessions:
+    get:
+      operationId: listSessions
+      tags: [discord]
+      summary: List all saved sessions
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+    post:
+      operationId: createSession
+      tags: [discord]
+      summary: Save a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionBody"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /discord/sessions/{id}:
+    delete:
+      operationId: deleteSession
+      tags: [discord]
+      summary: Delete a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +126,140 @@ components:
       required:
         - status
 
+    ValidateTokenBody:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+
+    TokenValidationResult:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        username:
+          type: string
+        discriminator:
+          type: string
+        id:
+          type: string
+        avatar:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+      required:
+        - valid
+
+    SendMessagesBody:
+      type: object
+      properties:
+        token:
+          type: string
+        channels:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+        repeatBypass:
+          type: boolean
+      required:
+        - token
+        - channels
+        - message
+
+    SendResult:
+      type: object
+      properties:
+        sent:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelSendResult"
+      required:
+        - sent
+        - failed
+        - results
+
+    ChannelSendResult:
+      type: object
+      properties:
+        channelId:
+          type: string
+        success:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+      required:
+        - channelId
+        - success
+
+    CreateSessionBody:
+      type: object
+      properties:
+        name:
+          type: string
+        token:
+          type: string
+        channels:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+        delay:
+          type: integer
+        repeatBypass:
+          type: boolean
+      required:
+        - name
+        - token
+        - channels
+        - message
+        - delay
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        token:
+          type: string
+        channels:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+        delay:
+          type: integer
+        repeatBypass:
+          type: boolean
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - token
+        - channels
+        - message
+        - delay
+        - createdAt
+
+    DeleteResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success

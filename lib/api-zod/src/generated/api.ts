@@ -14,3 +14,79 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * @summary Validate a Discord token
+ */
+export const ValidateTokenBody = zod.object({
+  token: zod.string(),
+});
+
+export const ValidateTokenResponse = zod.object({
+  valid: zod.boolean(),
+  username: zod.string().optional(),
+  discriminator: zod.string().optional(),
+  id: zod.string().optional(),
+  avatar: zod.string().nullish(),
+  error: zod.string().nullish(),
+});
+
+/**
+ * @summary Send messages to Discord channels
+ */
+export const SendMessagesBody = zod.object({
+  token: zod.string(),
+  channels: zod.array(zod.string()),
+  message: zod.string(),
+  repeatBypass: zod.boolean().optional(),
+});
+
+export const SendMessagesResponse = zod.object({
+  sent: zod.number(),
+  failed: zod.number(),
+  results: zod.array(
+    zod.object({
+      channelId: zod.string(),
+      success: zod.boolean(),
+      error: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary List all saved sessions
+ */
+export const ListSessionsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  token: zod.string(),
+  channels: zod.array(zod.string()),
+  message: zod.string(),
+  delay: zod.number(),
+  repeatBypass: zod.boolean().optional(),
+  createdAt: zod.string(),
+});
+export const ListSessionsResponse = zod.array(ListSessionsResponseItem);
+
+/**
+ * @summary Save a session
+ */
+export const CreateSessionBody = zod.object({
+  name: zod.string(),
+  token: zod.string(),
+  channels: zod.array(zod.string()),
+  message: zod.string(),
+  delay: zod.number(),
+  repeatBypass: zod.boolean().optional(),
+});
+
+/**
+ * @summary Delete a session
+ */
+export const DeleteSessionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteSessionResponse = zod.object({
+  success: zod.boolean(),
+});
