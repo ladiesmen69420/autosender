@@ -54,6 +54,71 @@ export const SendMessagesResponse = zod.object({
 });
 
 /**
+ * @summary Fetch recent DM conversations
+ */
+export const FetchDMsBody = zod.object({
+  token: zod.string(),
+});
+
+export const FetchDMsResponseItem = zod.object({
+  channelId: zod.string(),
+  userId: zod.string(),
+  username: zod.string(),
+  avatar: zod.string().nullish(),
+  lastMessage: zod.string(),
+  lastMessageId: zod.string(),
+  fromMe: zod.boolean(),
+});
+export const FetchDMsResponse = zod.array(FetchDMsResponseItem);
+
+/**
+ * @summary Generate an AI-powered reply to a Discord DM
+ */
+export const GenerateAIReplyBody = zod.object({
+  context: zod
+    .string()
+    .describe("The message or conversation context to reply to"),
+  persona: zod
+    .string()
+    .optional()
+    .describe("Optional persona\/instructions for the AI"),
+  token: zod.string().optional().describe("Discord token to identify the user"),
+  channelId: zod
+    .string()
+    .optional()
+    .describe("Optional channel ID to also send the reply"),
+});
+
+export const GenerateAIReplyResponse = zod.object({
+  reply: zod.string(),
+  sent: zod.boolean(),
+});
+
+/**
+ * @summary Run auto-reply on all pending DMs using AI
+ */
+export const RunAutoReplyBody = zod.object({
+  token: zod.string(),
+  persona: zod
+    .string()
+    .optional()
+    .describe("AI persona\/instructions for generating replies"),
+});
+
+export const RunAutoReplyResponse = zod.object({
+  replied: zod.number(),
+  skipped: zod.number(),
+  details: zod.array(
+    zod.object({
+      username: zod.string(),
+      channelId: zod.string(),
+      reply: zod.string(),
+      success: zod.boolean(),
+    }),
+  ),
+});
+
+/**
  * @summary List all saved sessions
  */
 export const ListSessionsResponseItem = zod.object({
@@ -64,6 +129,7 @@ export const ListSessionsResponseItem = zod.object({
   message: zod.string(),
   delay: zod.number(),
   repeatBypass: zod.boolean().optional(),
+  jitter: zod.number().nullish(),
   createdAt: zod.string(),
 });
 export const ListSessionsResponse = zod.array(ListSessionsResponseItem);
@@ -78,6 +144,10 @@ export const CreateSessionBody = zod.object({
   message: zod.string(),
   delay: zod.number(),
   repeatBypass: zod.boolean().optional(),
+  jitter: zod
+    .number()
+    .optional()
+    .describe("Jitter percentage (0-100) to add random delay"),
 });
 
 /**

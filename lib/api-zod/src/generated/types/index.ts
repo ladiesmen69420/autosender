@@ -6,10 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./autoReplyDetail";
 export * from "./channelSendResult";
 export * from "./createSessionBody";
 export * from "./deleteResult";
+export * from "./dMConversation";
+export * from "./fetchDMsBody";
+export * from "./generateAIReplyBody";
+export * from "./generateAIReplyResult";
 export * from "./healthStatus";
+export * from "./runAutoReplyBody";
+export * from "./runAutoReplyResult";
 export * from "./sendMessagesBody";
 export * from "./sendResult";
 export * from "./session";

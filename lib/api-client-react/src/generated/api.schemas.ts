@@ -41,6 +41,55 @@ export interface SendResult {
   results: ChannelSendResult[];
 }
 
+export interface FetchDMsBody {
+  token: string;
+}
+
+export interface DMConversation {
+  channelId: string;
+  userId: string;
+  username: string;
+  avatar?: string | null;
+  lastMessage: string;
+  lastMessageId: string;
+  fromMe: boolean;
+}
+
+export interface GenerateAIReplyBody {
+  /** The message or conversation context to reply to */
+  context: string;
+  /** Optional persona/instructions for the AI */
+  persona?: string;
+  /** Discord token to identify the user */
+  token?: string;
+  /** Optional channel ID to also send the reply */
+  channelId?: string;
+}
+
+export interface GenerateAIReplyResult {
+  reply: string;
+  sent: boolean;
+}
+
+export interface RunAutoReplyBody {
+  token: string;
+  /** AI persona/instructions for generating replies */
+  persona?: string;
+}
+
+export interface AutoReplyDetail {
+  username: string;
+  channelId: string;
+  reply: string;
+  success: boolean;
+}
+
+export interface RunAutoReplyResult {
+  replied: number;
+  skipped: number;
+  details: AutoReplyDetail[];
+}
+
 export interface CreateSessionBody {
   name: string;
   token: string;
@@ -48,6 +97,8 @@ export interface CreateSessionBody {
   message: string;
   delay: number;
   repeatBypass?: boolean;
+  /** Jitter percentage (0-100) to add random delay */
+  jitter?: number;
 }
 
 export interface Session {
@@ -58,6 +109,7 @@ export interface Session {
   message: string;
   delay: number;
   repeatBypass?: boolean;
+  jitter?: number | null;
   createdAt: string;
 }
 

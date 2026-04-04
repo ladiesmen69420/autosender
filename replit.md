@@ -2,47 +2,71 @@
 
 ## Overview
 
-Discord AutoSender — a web-based tool to automatically send messages to Discord channels using a user token (selfbot). Dark-themed, command-center UI.
+**SentinelBot** — A Discord AutoSender web app (selfbot) that automates Discord messaging, manages tokens, and uses AI to generate context-aware DM replies. Dark cyber/futuristic command-center UI.
 
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
 - **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
-- **Frontend**: React + Vite + Tailwind CSS (dark Discord theme)
+- **Frontend**: React + Vite + TailwindCSS v4 + shadcn/ui components
+- **Backend**: Express.js (pino logging, Zod validation)
+- **Database**: PostgreSQL via Drizzle ORM
+- **AI**: OpenAI via Replit AI Integrations proxy (gpt-5.2) — no user API key needed
+- **API validation**: OpenAPI spec + orval codegen for typed hooks
+
+## Artifacts
+
+- `artifacts/discord-autosender` — React frontend (port from `PORT` env)
+- `artifacts/api-server` — Express API server (port 8080)
+
+## Architecture
+
+```
+artifacts/
+  discord-autosender/     # React+Vite frontend
+  api-server/             # Express backend
+lib/
+  api-spec/               # OpenAPI spec + orval codegen (react-query hooks)
+  db/                     # Drizzle ORM schema + migrations
+```
 
 ## Features
 
-- Token validation via Discord API v10
-- Multi-channel targeting
-- Configurable delay and repeat bypass
-- Live execution log with sent/failed counters
-- Saved presets/sessions stored in PostgreSQL
+1. **Dashboard** — Stats overview, quick actions, recent activity log
+2. **AutoSender** — Broadcast messages to multiple channels with configurable delay, jitter, repeat bypass, and saved presets
+3. **AI Reply** — Generate natural DM replies with a custom persona, auto-reply mode (60s scan), DM conversation browser
+4. **Tokens** — Validate Discord user tokens with live account info
+5. **Logs** — Real-time filterable activity log
 
-## API Routes
+## Database Schema
 
-- `POST /api/discord/validate-token` — validate Discord user token
-- `POST /api/discord/send-messages` — send message to channels
-- `GET /api/discord/sessions` — list saved sessions
-- `POST /api/discord/sessions` — save a session
-- `DELETE /api/discord/sessions/:id` — delete a session
+### `sessions` table
+- `id` (serial PK), `name` (text), `token` (text), `channels` (text[]), `message` (text)
+- `delay` (int, default 5), `repeat_bypass` (bool), `jitter` (int, default 0)
+- `created_at` (timestamp)
 
-## DB Schema
+## API Routes (`/api/discord/*`)
 
-- `sessions` — saved autosender configs (name, token, channels, message, delay, repeatBypass)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /validate-token | Validate a Discord user token |
+| POST | /send-messages | Send to multiple channels |
+| POST | /dms | Fetch DM conversations |
+| POST | /ai-reply | Generate + optionally send AI reply |
+| POST | /auto-reply | Scan all DMs and auto-reply with AI |
+| GET | /sessions | List saved presets |
+| POST | /sessions | Create preset |
+| DELETE | /sessions/:id | Delete preset |
 
-## Key Commands
+## Key Implementation Details
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- Discord API v10 used; token passed as `Authorization` header directly
+- Jitter: `delay * 1000 + delay * 1000 * (random * jitter/100)` ms
+- Repeat bypass: appends random 15-digit number to message content
+- Auto-reply polls DMs every 60s via frontend `setInterval`
+- OpenAI model: `gpt-5.2`, max 200 tokens per reply
+- Sessions table has `jitter` column (integer, default 0)
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+## Disclaimer
+
+Uses Discord user tokens (selfbot) — violates Discord ToS. Disclaimer shown prominently in UI.

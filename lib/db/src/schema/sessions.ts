@@ -10,6 +10,7 @@ export const sessionsTable = pgTable("sessions", {
   message: text("message").notNull(),
   delay: integer("delay").notNull().default(5),
   repeatBypass: boolean("repeat_bypass").notNull().default(false),
+  jitter: integer("jitter").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

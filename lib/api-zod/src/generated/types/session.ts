@@ -14,5 +14,6 @@ export interface Session {
   message: string;
   delay: number;
   repeatBypass?: boolean;
+  jitter?: number | null;
   createdAt: string;
 }

@@ -65,6 +65,65 @@ paths:
               schema:
                 $ref: "#/components/schemas/SendResult"
 
+  /discord/dms:
+    post:
+      operationId: fetchDMs
+      tags: [discord]
+      summary: Fetch recent DM conversations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FetchDMsBody"
+      responses:
+        "200":
+          description: List of DM conversations with latest message
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DMConversation"
+
+  /discord/ai-reply:
+    post:
+      operationId: generateAIReply
+      tags: [discord]
+      summary: Generate an AI-powered reply to a Discord DM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateAIReplyBody"
+      responses:
+        "200":
+          description: Generated reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateAIReplyResult"
+
+  /discord/auto-reply:
+    post:
+      operationId: runAutoReply
+      tags: [discord]
+      summary: Run auto-reply on all pending DMs using AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunAutoReplyBody"
+      responses:
+        "200":
+          description: Auto-reply results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunAutoReplyResult"
+
   /discord/sessions:
     get:
       operationId: listSessions
@@ -202,6 +261,113 @@ components:
         - channelId
         - success
 
+    FetchDMsBody:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+
+    DMConversation:
+      type: object
+      properties:
+        channelId:
+          type: string
+        userId:
+          type: string
+        username:
+          type: string
+        avatar:
+          type: string
+          nullable: true
+        lastMessage:
+          type: string
+        lastMessageId:
+          type: string
+        fromMe:
+          type: boolean
+      required:
+        - channelId
+        - userId
+        - username
+        - lastMessage
+        - lastMessageId
+        - fromMe
+
+    GenerateAIReplyBody:
+      type: object
+      properties:
+        context:
+          type: string
+          description: The message or conversation context to reply to
+        persona:
+          type: string
+          description: Optional persona/instructions for the AI
+        token:
+          type: string
+          description: Discord token to identify the user
+        channelId:
+          type: string
+          description: Optional channel ID to also send the reply
+      required:
+        - context
+
+    GenerateAIReplyResult:
+      type: object
+      properties:
+        reply:
+          type: string
+        sent:
+          type: boolean
+      required:
+        - reply
+        - sent
+
+    RunAutoReplyBody:
+      type: object
+      properties:
+        token:
+          type: string
+        persona:
+          type: string
+          description: AI persona/instructions for generating replies
+      required:
+        - token
+
+    RunAutoReplyResult:
+      type: object
+      properties:
+        replied:
+          type: integer
+        skipped:
+          type: integer
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutoReplyDetail"
+      required:
+        - replied
+        - skipped
+        - details
+
+    AutoReplyDetail:
+      type: object
+      properties:
+        username:
+          type: string
+        channelId:
+          type: string
+        reply:
+          type: string
+        success:
+          type: boolean
+      required:
+        - username
+        - channelId
+        - reply
+        - success
+
     CreateSessionBody:
       type: object
       properties:
@@ -219,6 +385,9 @@ components:
           type: integer
         repeatBypass:
           type: boolean
+        jitter:
+          type: integer
+          description: Jitter percentage (0-100) to add random delay
       required:
         - name
         - token
@@ -245,6 +414,9 @@ components:
           type: integer
         repeatBypass:
           type: boolean
+        jitter:
+          type: integer
+          nullable: true
         createdAt:
           type: string
       required:

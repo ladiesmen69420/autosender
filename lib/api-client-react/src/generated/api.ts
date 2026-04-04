@@ -18,8 +18,14 @@ import type {
 
 import type {
   CreateSessionBody,
+  DMConversation,
   DeleteResult,
+  FetchDMsBody,
+  GenerateAIReplyBody,
+  GenerateAIReplyResult,
   HealthStatus,
+  RunAutoReplyBody,
+  RunAutoReplyResult,
   SendMessagesBody,
   SendResult,
   Session,
@@ -282,6 +288,264 @@ export const useSendMessages = <
   TContext
 > => {
   return useMutation(getSendMessagesMutationOptions(options));
+};
+
+/**
+ * @summary Fetch recent DM conversations
+ */
+export const getFetchDMsUrl = () => {
+  return `/api/discord/dms`;
+};
+
+export const fetchDMs = async (
+  fetchDMsBody: FetchDMsBody,
+  options?: RequestInit,
+): Promise<DMConversation[]> => {
+  return customFetch<DMConversation[]>(getFetchDMsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(fetchDMsBody),
+  });
+};
+
+export const getFetchDMsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchDMs>>,
+    TError,
+    { data: BodyType<FetchDMsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof fetchDMs>>,
+  TError,
+  { data: BodyType<FetchDMsBody> },
+  TContext
+> => {
+  const mutationKey = ["fetchDMs"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof fetchDMs>>,
+    { data: BodyType<FetchDMsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return fetchDMs(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FetchDMsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof fetchDMs>>
+>;
+export type FetchDMsMutationBody = BodyType<FetchDMsBody>;
+export type FetchDMsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Fetch recent DM conversations
+ */
+export const useFetchDMs = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchDMs>>,
+    TError,
+    { data: BodyType<FetchDMsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof fetchDMs>>,
+  TError,
+  { data: BodyType<FetchDMsBody> },
+  TContext
+> => {
+  return useMutation(getFetchDMsMutationOptions(options));
+};
+
+/**
+ * @summary Generate an AI-powered reply to a Discord DM
+ */
+export const getGenerateAIReplyUrl = () => {
+  return `/api/discord/ai-reply`;
+};
+
+export const generateAIReply = async (
+  generateAIReplyBody: GenerateAIReplyBody,
+  options?: RequestInit,
+): Promise<GenerateAIReplyResult> => {
+  return customFetch<GenerateAIReplyResult>(getGenerateAIReplyUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(generateAIReplyBody),
+  });
+};
+
+export const getGenerateAIReplyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateAIReply>>,
+    TError,
+    { data: BodyType<GenerateAIReplyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateAIReply>>,
+  TError,
+  { data: BodyType<GenerateAIReplyBody> },
+  TContext
+> => {
+  const mutationKey = ["generateAIReply"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateAIReply>>,
+    { data: BodyType<GenerateAIReplyBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return generateAIReply(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateAIReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateAIReply>>
+>;
+export type GenerateAIReplyMutationBody = BodyType<GenerateAIReplyBody>;
+export type GenerateAIReplyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate an AI-powered reply to a Discord DM
+ */
+export const useGenerateAIReply = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateAIReply>>,
+    TError,
+    { data: BodyType<GenerateAIReplyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateAIReply>>,
+  TError,
+  { data: BodyType<GenerateAIReplyBody> },
+  TContext
+> => {
+  return useMutation(getGenerateAIReplyMutationOptions(options));
+};
+
+/**
+ * @summary Run auto-reply on all pending DMs using AI
+ */
+export const getRunAutoReplyUrl = () => {
+  return `/api/discord/auto-reply`;
+};
+
+export const runAutoReply = async (
+  runAutoReplyBody: RunAutoReplyBody,
+  options?: RequestInit,
+): Promise<RunAutoReplyResult> => {
+  return customFetch<RunAutoReplyResult>(getRunAutoReplyUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(runAutoReplyBody),
+  });
+};
+
+export const getRunAutoReplyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runAutoReply>>,
+    TError,
+    { data: BodyType<RunAutoReplyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runAutoReply>>,
+  TError,
+  { data: BodyType<RunAutoReplyBody> },
+  TContext
+> => {
+  const mutationKey = ["runAutoReply"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runAutoReply>>,
+    { data: BodyType<RunAutoReplyBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return runAutoReply(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunAutoReplyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runAutoReply>>
+>;
+export type RunAutoReplyMutationBody = BodyType<RunAutoReplyBody>;
+export type RunAutoReplyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Run auto-reply on all pending DMs using AI
+ */
+export const useRunAutoReply = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runAutoReply>>,
+    TError,
+    { data: BodyType<RunAutoReplyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runAutoReply>>,
+  TError,
+  { data: BodyType<RunAutoReplyBody> },
+  TContext
+> => {
+  return useMutation(getRunAutoReplyMutationOptions(options));
 };
 
 /**
