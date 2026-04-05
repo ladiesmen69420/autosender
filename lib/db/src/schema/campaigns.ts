@@ -14,6 +14,7 @@ export const campaignsTable = pgTable("campaigns", {
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
   rateLimitBonus: integer("rate_limit_bonus").notNull().default(0),
+  rateLimitProtection: boolean("rate_limit_protection").notNull().default(true),
   lastSentAt: timestamp("last_sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
