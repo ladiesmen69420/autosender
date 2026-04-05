@@ -2,7 +2,7 @@
 
 ## Overview
 
-**SentinelBot** — A Discord AutoSender web app (selfbot) that automates Discord messaging, manages tokens, and uses AI to generate context-aware DM replies. Dark cyber/futuristic command-center UI.
+**ballistiballs adv** — A Discord AutoSender web app (selfbot) that automates Discord messaging via server-side campaign scheduling (runs 24/7 even when browser is closed), manages tokens, and uses AI to generate context-aware DM replies. Dark cyber/futuristic command-center UI.
 
 ## Stack
 
