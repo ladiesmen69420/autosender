@@ -1,9 +1,24 @@
 import { Router } from "express";
 import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { eq, and, gte, desc, or, isNull } from "drizzle-orm";
+import { getAuth } from "@clerk/express";
 import { startCampaignSchedule, stopCampaignSchedule, isRunning, getNextSendAt, doSend } from "../scheduler";
 
 const router = Router();
+
+function getUserId(req: any): string | null {
+  try {
+    const auth = getAuth(req);
+    return auth?.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function userFilter(userId: string | null) {
+  if (!userId) return isNull(campaignsTable.userId);
+  return or(eq(campaignsTable.userId, userId), isNull(campaignsTable.userId));
+}
 
 function pickUA() {
   const agents = [
@@ -53,8 +68,10 @@ function serializeCampaign(row: typeof campaignsTable.$inferSelect, sentToday = 
   };
 }
 
-router.get("/", async (_req, res) => {
-  const rows = await db.select().from(campaignsTable).orderBy(campaignsTable.createdAt);
+router.get("/", async (req, res) => {
+  const userId = getUserId(req);
+  const filter = userFilter(userId);
+  const rows = await db.select().from(campaignsTable).where(filter).orderBy(campaignsTable.createdAt);
   const todayMidnight = new Date();
   todayMidnight.setHours(0, 0, 0, 0);
 
@@ -72,6 +89,7 @@ router.get("/", async (_req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  const userId = getUserId(req);
   const data = parseCampaignBody(req.body as Record<string, unknown>);
   if (!data.name || !data.token || !data.message) {
     res.status(400).json({ error: "name, token, and message are required" });
@@ -81,6 +99,7 @@ router.post("/", async (req, res) => {
   const [row] = await db
     .insert(campaignsTable)
     .values({
+      userId,
       name: data.name,
       token: data.token,
       channels: data.channels,
@@ -107,6 +126,7 @@ router.put("/:id", async (req, res) => {
   update.delay = data.delay;
   update.jitter = data.jitter;
   if (data.rateLimitProtection !== undefined) update.rateLimitProtection = data.rateLimitProtection;
+  update.consecutiveFailures = 0;
 
   const [row] = await db
     .update(campaignsTable)
@@ -130,13 +150,38 @@ router.delete("/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+router.post("/:id/duplicate", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const userId = getUserId(req);
+  const [original] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id)).limit(1);
+  if (!original) { res.status(404).json({ error: "Not found" }); return; }
+
+  const [row] = await db
+    .insert(campaignsTable)
+    .values({
+      userId,
+      name: `${original.name} (copy)`,
+      token: original.token,
+      channels: original.channels,
+      message: original.message,
+      delay: original.delay,
+      jitter: original.jitter,
+      rateLimitProtection: original.rateLimitProtection,
+    })
+    .returning();
+
+  res.status(201).json(serializeCampaign(row, 0));
+});
+
 router.post("/:id/start", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const [row] = await db
     .update(campaignsTable)
-    .set({ running: true })
+    .set({ running: true, consecutiveFailures: 0 })
     .where(eq(campaignsTable.id, id))
     .returning();
 
@@ -168,7 +213,7 @@ router.post("/:id/reset-stats", async (req, res) => {
 
   const [row] = await db
     .update(campaignsTable)
-    .set({ sentCount: 0, failedCount: 0, rateLimitBonus: 0 })
+    .set({ sentCount: 0, failedCount: 0, rateLimitBonus: 0, consecutiveFailures: 0 })
     .where(eq(campaignsTable.id, id))
     .returning();
 

@@ -12,6 +12,8 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
 ];
 
+const MAX_CONSECUTIVE_FAILURES = 10;
+
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 const sendCounts = new Map<number, number>();
 const nextSendTimes = new Map<number, Date>();
@@ -171,12 +173,47 @@ async function sendCampaign(id: number): Promise<void> {
     newRateLimitBonus = 0;
   }
 
+  // Track consecutive failures for auto-stop
+  const allFailed = sent === 0 && failed > 0;
+  const newConsecutiveFailures = allFailed
+    ? campaign.consecutiveFailures + 1
+    : 0;
+
+  // Auto-stop if too many consecutive failures
+  if (newConsecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    await writeLog(
+      id,
+      "error",
+      `Campaign auto-stopped after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
+      undefined,
+      `All sends have failed ${MAX_CONSECUTIVE_FAILURES} times in a row.`,
+      "Check your Discord token (may be invalid/expired), channel IDs, and permissions. Update and restart the campaign.",
+    );
+    await db
+      .update(campaignsTable)
+      .set({
+        running: false,
+        sentCount: campaign.sentCount + sent,
+        failedCount: campaign.failedCount + failed,
+        rateLimitBonus: newRateLimitBonus,
+        consecutiveFailures: newConsecutiveFailures,
+        lastSentAt: new Date(),
+      })
+      .where(eq(campaignsTable.id, id));
+    timers.delete(id);
+    sendCounts.delete(id);
+    nextSendTimes.delete(id);
+    logger.warn({ campaignId: id }, "Campaign auto-stopped due to consecutive failures");
+    return;
+  }
+
   await db
     .update(campaignsTable)
     .set({
       sentCount: campaign.sentCount + sent,
       failedCount: campaign.failedCount + failed,
       rateLimitBonus: newRateLimitBonus,
+      consecutiveFailures: newConsecutiveFailures,
       lastSentAt: new Date(),
     })
     .where(eq(campaignsTable.id, id));

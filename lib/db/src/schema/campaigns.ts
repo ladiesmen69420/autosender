@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export const campaignsTable = pgTable("campaigns", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"),
   name: text("name").notNull(),
   token: text("token").notNull(),
   channels: text("channels").array().notNull(),
@@ -15,12 +16,13 @@ export const campaignsTable = pgTable("campaigns", {
   failedCount: integer("failed_count").notNull().default(0),
   rateLimitBonus: integer("rate_limit_bonus").notNull().default(0),
   rateLimitProtection: boolean("rate_limit_protection").notNull().default(true),
+  consecutiveFailures: integer("consecutive_failures").notNull().default(0),
   lastSentAt: timestamp("last_sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertCampaignSchema = createInsertSchema(campaignsTable).omit({
-  id: true, sentCount: true, failedCount: true, rateLimitBonus: true, lastSentAt: true, createdAt: true,
+  id: true, sentCount: true, failedCount: true, rateLimitBonus: true, lastSentAt: true, createdAt: true, consecutiveFailures: true,
 });
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 export type Campaign = typeof campaignsTable.$inferSelect;
