@@ -1,0 +1,65 @@
+make a discord autosender that works with tokens, so that i can send messages in another server channel, like autosender.lol u can use these files for refrence
+2 days ago
+11 messages & 23 actions
+Presented output
+Discord AutoSenderWebsite
+Open
+1 message & 1 action
+Checkpoint made
+2 days ago
+Worked for 2 minutes
+make an AI Conversation
+Generate natural, context-aware DM replies
+Auto-Reply
+Reply to DMs
+Message Jitter (%)
+Adds up to X% extra delay.
+and also make the website look something like the screenshot, make it look more cyber and futuristic
+2 days ago
+16 messages & 54 actions
+Checkpoint made
+2 days ago
+Worked for 7 minutes
+Published your app
+2 days ago
+Published your app
+2 days ago
+make it so that i can create more than one campaign, so basically i can send one differents accounts at the same time, and also there is a weird watermark where random
+816682983725684" fix it and remove that water mark
+2 days ago
+8 messages & 26 actions
+Checkpoint made
+2 days ago
+Worked for 5 minutes
+make it so that the website logo has an actual logo, instead of the orange blob, and change "payload message" to "message" change "enter message to broadcast" to "message to send" change "events" to "messages" and remove "4. Look for a request to discord.com/api/v9 — check the Authorization header"
+2 days ago
+10 messages & 30 actions
+Checkpoint made
+2 days ago
+Worked for 3 minutes
+Published your app
+2 days ago
+make this the official logo for the website at the website icon and also change the name from "SentinelBot
+v2.0" to "ballistiballs adv"
+and add Adaptive Rate Limit Protection
+, Automatically increase interval when rate limited to prevent future limits. also add Anti-Detection -
+Human delays, UA rotation, burst breaks
+also fix ai auto reply, and make it so that data in the website will be saved, auto sender doesnt work when offline to change that and make it so that it still autosends when im offline
+1 day ago
+17 messages & 57 actions
+Checkpoint made
+1 day ago
+Worked for 9 minutes
+Published your app
+1 day ago
+You have reached your free quota limit
+Published your app
+1 day ago
+make it so that when a message fails u can see the reason for failure, and show what user can do to fix the failure
+also show when the next message will be sent, where there is a countdown to when the next message will be sent and put a test send function in the campaign also add a button where u can chooses to turn rate limit protection on or off, and add an edit button so i dont have to always stop my campaign before editing it
+also make it so that the activity log is accustomed to each campaign so for every new campaign new activity log and for campaign deleted the activity log for that campaign deleted and change the log to look like this and show the time stamp for each message sent, or failed.
+also automatically save all the info in dashboard, auto reply andd activity log, making it so that everything in the website will be automatically saved, including token account. and seperate the activity log between sent today and sent all time, and remove the autoreply scans in activity log
+Show less
+1 day ago
+6 messages & 16 actions
+Worked for 9 minutes
