@@ -1,6 +1,6 @@
 import { useSignIn, useAuth } from "@clerk/react";
 import { useLocation } from "wouter";
-import previewImg from "@assets/image_1775526513741.png";
+import previewImg from "@assets/image_1775526741335.png";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
