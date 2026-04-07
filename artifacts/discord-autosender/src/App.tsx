@@ -1,11 +1,14 @@
 import { useEffect, useRef } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { ClerkProvider, SignIn, SignUp, Show, useClerk, useAuth } from "@clerk/react";
+import {
+  ClerkProvider, SignIn, SignUp, Show, useClerk, AuthenticateWithRedirectCallback,
+} from "@clerk/react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
+import Landing from "@/pages/landing";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -28,37 +31,54 @@ const queryClient = new QueryClient({
 
 function SignInPage() {
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
+    <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
+      <SignIn
+        routing="path"
+        path={`${basePath}/sign-in`}
+        signUpUrl={`${basePath}/sign-up`}
+        fallbackRedirectUrl={`${basePath}/app`}
+      />
     </div>
   );
 }
 
 function SignUpPage() {
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
+    <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
+      <SignUp
+        routing="path"
+        path={`${basePath}/sign-up`}
+        signInUrl={`${basePath}/sign-in`}
+        fallbackRedirectUrl={`${basePath}/app`}
+      />
     </div>
   );
 }
 
 function HomeRedirect() {
-  const { isLoaded, isSignedIn } = useAuth();
-  const [, setLocation] = useLocation();
-  useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      setLocation("/sign-in");
-    }
-  }, [isLoaded, isSignedIn, setLocation]);
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-  if (!isSignedIn) return null;
-  return <Home />;
+  return (
+    <>
+      <Show when="signed-in">
+        <Redirect to="/app" />
+      </Show>
+      <Show when="signed-out">
+        <Landing />
+      </Show>
+    </>
+  );
+}
+
+function AppRoute() {
+  return (
+    <>
+      <Show when="signed-in">
+        <Home />
+      </Show>
+      <Show when="signed-out">
+        <Redirect to="/" />
+      </Show>
+    </>
+  );
 }
 
 function ClerkQueryClientCacheInvalidator() {
@@ -95,8 +115,14 @@ function ClerkProviderWithRoutes() {
           <ClerkQueryClientCacheInvalidator />
           <Switch>
             <Route path="/" component={HomeRedirect} />
+            <Route path="/app" component={AppRoute} />
             <Route path="/sign-in/*?" component={SignInPage} />
             <Route path="/sign-up/*?" component={SignUpPage} />
+            <Route path="/sso-callback" component={() => (
+              <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
+                <AuthenticateWithRedirectCallback />
+              </div>
+            )} />
             <Route component={NotFound} />
           </Switch>
           <Toaster />

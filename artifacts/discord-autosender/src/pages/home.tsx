@@ -756,7 +756,7 @@ export default function Home() {
               {runningCount > 0 ? `${runningCount} live` : "Idle"}
             </span>
             {user && (
-              <button onClick={() => signOut()} className="text-muted-foreground hover:text-red-400 transition-colors" title="Sign out">
+              <button onClick={() => signOut({ redirectUrl: "/" })} className="text-muted-foreground hover:text-red-400 transition-colors" title="Sign out">
                 <LogOut className="w-3 h-3" />
               </button>
             )}
