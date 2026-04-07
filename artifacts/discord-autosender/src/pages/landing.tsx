@@ -1,5 +1,6 @@
 import { useSignIn, useAuth } from "@clerk/react";
 import { useLocation } from "wouter";
+import previewImg from "@assets/image_1775526513741.png";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -81,76 +82,13 @@ export default function Landing() {
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col gap-4 min-w-0 max-w-lg">
-          <div className="bg-[#111114] border border-[#1f1f24] rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <span className="font-semibold text-sm">Your Discord Accounts</span>
-              <button className="bg-[#3b82f6] hover:bg-[#2563eb] text-white text-xs px-3 py-1.5 rounded-lg font-medium transition-colors">
-                Add Discord Account
-              </button>
-            </div>
-            <div className="flex items-center gap-3 p-3 bg-[#18181c] rounded-xl">
-              <div className="w-10 h-10 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-sm flex-shrink-0">
-                B
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">brringuwu8756</span>
-                  <div className="w-2 h-2 bg-green-400 rounded-full flex-shrink-0" />
-                </div>
-                <div className="text-gray-500 text-xs truncate">102624907806289372</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-[#111114] border border-[#1f1f24] rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <span className="font-semibold text-sm">Autosender Campaigns</span>
-              <button className="bg-[#3b82f6] hover:bg-[#2563eb] text-white text-xs px-3 py-1.5 rounded-lg font-medium transition-colors">
-                Create Campaign
-              </button>
-            </div>
-            <div className="grid grid-cols-4 gap-3 mb-4">
-              {[
-                { label: "TOTAL", value: "1", color: "text-white" },
-                { label: "RUNNING", value: "0", color: "text-green-400" },
-                { label: "FAILED", value: "0", color: "text-red-400" },
-                { label: "SENT", value: "374", color: "text-white" },
-              ].map(({ label, value, color }) => (
-                <div key={label}>
-                  <div className="text-gray-600 text-[10px] uppercase font-medium mb-1">{label}</div>
-                  <div className={`font-bold text-xl ${color}`}>{value}</div>
-                </div>
-              ))}
-            </div>
-            <div className="bg-[#18181c] rounded-xl p-3.5">
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">Test</span>
-                  <span className="text-[10px] bg-yellow-950 text-yellow-400 px-2 py-0.5 rounded-md font-medium">
-                    Stopped
-                  </span>
-                </div>
-              </div>
-              <div className="text-gray-500 text-xs mb-3">Account: brringuwu8756</div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-4">
-                {[
-                  { label: "MESSAGES SENT", value: "374" },
-                  { label: "FAILED", value: "2" },
-                  { label: "INTERVAL", value: "1m" },
-                  { label: "CREATED", value: "2025-12-29" },
-                ].map(({ label, value }) => (
-                  <div key={label}>
-                    <div className="text-gray-600 text-[10px] uppercase font-medium">{label}</div>
-                    <div className="text-gray-300">{value}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="bg-[#3b82f6] text-white text-center text-xs py-2 rounded-lg font-medium">
-                ▶ Start Campaign
-              </div>
-            </div>
-          </div>
+        <div className="flex-1 min-w-0 flex items-center justify-center">
+          <img
+            src={previewImg}
+            alt="App preview"
+            className="w-full max-w-lg rounded-2xl shadow-2xl"
+            draggable={false}
+          />
         </div>
       </div>
     </div>
