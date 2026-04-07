@@ -1,8 +1,8 @@
-import { useSignIn, useAuth } from "@clerk/react";
+import { useAuth } from "@clerk/react";
 import { useLocation } from "wouter";
 import previewImg from "@assets/image_1775526741335.png";
 
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const apiBase = `${import.meta.env.BASE_URL}api`;
 
 function DiscordLogo() {
   return (
@@ -22,21 +22,15 @@ function AppLogo() {
 }
 
 export default function Landing() {
-  const { signIn, isLoaded } = useSignIn();
   const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
 
-  const handleDiscordSignIn = async () => {
-    if (!isLoaded || !signIn) return;
-    try {
-      await signIn.authenticateWithRedirect({
-        strategy: "oauth_discord",
-        redirectUrl: `${basePath}/sso-callback`,
-        redirectUrlComplete: `${basePath}/app`,
-      });
-    } catch {
-      setLocation("/sign-in");
+  const handleDiscordSignIn = () => {
+    if (isSignedIn) {
+      setLocation("/app");
+      return;
     }
+    window.location.href = `${apiBase}/auth/discord`;
   };
 
   const handleGetStarted = handleDiscordSignIn;

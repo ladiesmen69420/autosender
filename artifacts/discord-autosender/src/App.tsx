@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Landing from "@/pages/landing";
+import DiscordSignIn from "@/pages/discord-signin";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -123,6 +124,7 @@ function ClerkProviderWithRoutes() {
                 <AuthenticateWithRedirectCallback />
               </div>
             )} />
+            <Route path="/discord-signin" component={DiscordSignIn} />
             <Route component={NotFound} />
           </Switch>
           <Toaster />
