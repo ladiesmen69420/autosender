@@ -1,28 +1,31 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { createClerkClient } from "@clerk/express";
 
 const router = Router();
 
-function getAppUrl(): string {
-  const domain = process.env.REPLIT_DEV_DOMAIN;
-  if (domain) return `https://${domain}`;
-  return `http://localhost:${process.env.PORT ?? 8080}`;
+function getBaseUrl(req: Request): string {
+  const proto = req.headers["x-forwarded-proto"] ?? req.protocol ?? "https";
+  const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+  return `${proto}://${host}`;
 }
 
-function getDiscordRedirectUri(): string {
-  return `${getAppUrl()}/api/auth/discord/callback`;
+function getDiscordRedirectUri(req: Request): string {
+  return `${getBaseUrl(req)}/api/auth/discord/callback`;
 }
 
 router.get("/discord", (req, res) => {
   const clientId = process.env.DISCORD_CLIENT_ID;
   if (!clientId) {
-    res.status(503).send("Discord OAuth not configured. Set DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET env vars.");
+    res.status(503).send(
+      "Discord OAuth not configured — please add DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET to Replit Secrets, then restart the API server."
+    );
     return;
   }
 
+  const redirectUri = getDiscordRedirectUri(req);
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: getDiscordRedirectUri(),
+    redirect_uri: redirectUri,
     response_type: "code",
     scope: "identify email",
   });
@@ -32,10 +35,10 @@ router.get("/discord", (req, res) => {
 
 router.get("/discord/callback", async (req, res) => {
   const { code, error } = req.query;
-  const appUrl = getAppUrl();
+  const baseUrl = getBaseUrl(req);
 
   if (error || !code) {
-    res.redirect(`${appUrl}/?auth_error=cancelled`);
+    res.redirect(`${baseUrl}/?auth_error=cancelled`);
     return;
   }
 
@@ -51,7 +54,7 @@ router.get("/discord/callback", async (req, res) => {
         client_secret: clientSecret,
         grant_type: "authorization_code",
         code: String(code),
-        redirect_uri: getDiscordRedirectUri(),
+        redirect_uri: getDiscordRedirectUri(req),
       }),
     });
 
@@ -94,10 +97,10 @@ router.get("/discord/callback", async (req, res) => {
       expiresInSeconds: 120,
     });
 
-    res.redirect(`${appUrl}/discord-signin?token=${encodeURIComponent(signInToken.token)}`);
+    res.redirect(`${baseUrl}/discord-signin?token=${encodeURIComponent(signInToken.token)}`);
   } catch (err) {
     console.error("Discord OAuth error:", err);
-    res.redirect(`${getAppUrl()}/?auth_error=failed`);
+    res.redirect(`${baseUrl}/?auth_error=failed`);
   }
 });
 
