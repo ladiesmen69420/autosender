@@ -39,13 +39,7 @@ export default function Landing() {
     }
   };
 
-  const handleGetStarted = () => {
-    if (isSignedIn) {
-      setLocation("/app");
-    } else {
-      handleDiscordSignIn();
-    }
-  };
+  const handleGetStarted = handleDiscordSignIn;
 
   return (
     <div className="min-h-screen bg-[#0d0d0f] text-white flex flex-col">
