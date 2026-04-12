@@ -39,8 +39,8 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=24296 BASE_PATH=/ pnpm --filter @workspace/discord-autosender run dev"
-waitForPort = 24296
+args = "PORT=5173 BASE_PATH=/ pnpm --filter @workspace/discord-autosender run dev"
+waitForPort = 5173
 
 [[workflows.workflow]]
 name = "Start Backend"
