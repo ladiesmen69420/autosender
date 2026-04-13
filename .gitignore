@@ -47,3 +47,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Vercel build output
+/api/handler.mjs
+/api/pino-worker.mjs
+/api/pino-file.mjs
+/api/pino-pretty.mjs
+/api/thread-stream-worker.mjs
+/api/*.mjs.map
