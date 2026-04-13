@@ -55,3 +55,7 @@ Thumbs.db
 /api/pino-pretty.mjs
 /api/thread-stream-worker.mjs
 /api/*.mjs.map
+
+# Railway / backend build output
+artifacts/api-server/dist/
+artifacts/discord-autosender/dist/

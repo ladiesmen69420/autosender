@@ -5,6 +5,7 @@ import { clerkMiddleware } from "@clerk/express";
 import { CLERK_PROXY_PATH, clerkProxyMiddleware } from "./middlewares/clerkProxyMiddleware";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import path from "path";
 
 const app: Express = express();
 
@@ -37,5 +38,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(clerkMiddleware());
 
 app.use("/api", router);
+
+if (process.env.NODE_ENV === "production") {
+  const frontendDir = path.join(process.cwd(), "artifacts/discord-autosender/dist/public");
+  app.use(express.static(frontendDir));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(frontendDir, "index.html"));
+  });
+}
 
 export default app;
