@@ -1,9 +1,0 @@
-{
-  "version": 2,
-  "buildCommand": "pnpm install --no-frozen-lockfile && node artifacts/api-server/build-vercel.mjs && PORT=3000 BASE_PATH=/ pnpm --filter @workspace/discord-autosender run build",
-  "outputDirectory": "artifacts/discord-autosender/dist/public",
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/handler" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
-  ]
-}
