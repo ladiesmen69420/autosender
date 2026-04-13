@@ -1,14 +1,34 @@
-import { useEffect, useState } from "react";
-import { useSignIn } from "@clerk/react";
+import { useEffect, useRef, useState } from "react";
+import { useSignIn, useAuth } from "@clerk/react";
 import { useLocation } from "wouter";
+
+const TIMEOUT_MS = 20_000;
 
 export default function DiscordSignIn() {
   const { signIn, setActive, isLoaded } = useSignIn();
+  const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
   const [error, setError] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
+  const attempted = useRef(false);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!attempted.current) {
+        setTimedOut(true);
+      }
+    }, TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (isSignedIn) {
+      setLocation("/app");
+      return;
+    }
+
     if (!isLoaded || !signIn) return;
+    if (attempted.current) return;
 
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
@@ -17,6 +37,8 @@ export default function DiscordSignIn() {
       setLocation("/");
       return;
     }
+
+    attempted.current = true;
 
     (async () => {
       try {
@@ -29,16 +51,22 @@ export default function DiscordSignIn() {
         }
       } catch (err: any) {
         console.error("Token sign-in error:", err);
-        setError(err?.errors?.[0]?.message ?? "Sign-in failed. Please try again.");
+        const msg =
+          err?.errors?.[0]?.longMessage ??
+          err?.errors?.[0]?.message ??
+          "Sign-in failed. Please try again.";
+        setError(msg);
       }
     })();
-  }, [isLoaded, signIn, setActive, setLocation]);
+  }, [isLoaded, isSignedIn, signIn, setActive, setLocation]);
 
-  return (
-    <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
-      {error ? (
-        <div className="text-center">
-          <p className="text-red-400 mb-4">{error}</p>
+  if (error || timedOut) {
+    return (
+      <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
+        <div className="text-center space-y-3 max-w-sm px-4">
+          <p className="text-red-400 text-sm">
+            {error ?? "Sign-in timed out — the link may have expired or Clerk is slow to load. Please try again."}
+          </p>
           <button
             onClick={() => setLocation("/")}
             className="text-blue-400 hover:underline text-sm"
@@ -46,12 +74,16 @@ export default function DiscordSignIn() {
             Back to home
           </button>
         </div>
-      ) : (
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-[#5865F2] border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400 text-sm">Signing you in with Discord…</p>
-        </div>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-6 h-6 border-2 border-[#5865F2] border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-sm">Signing you in with Discord…</p>
+      </div>
     </div>
   );
 }

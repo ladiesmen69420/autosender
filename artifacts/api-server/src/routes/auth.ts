@@ -94,7 +94,7 @@ router.get("/discord/callback", async (req, res) => {
 
     const signInToken = await clerk.signInTokens.createSignInToken({
       userId: clerkUser.id,
-      expiresInSeconds: 120,
+      expiresInSeconds: 300,
     });
 
     res.redirect(`${baseUrl}/discord-signin?token=${encodeURIComponent(signInToken.token)}`);
