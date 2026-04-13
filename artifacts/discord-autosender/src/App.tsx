@@ -134,6 +134,23 @@ function ClerkProviderWithRoutes() {
   );
 }
 
+function MissingConfigPage() {
+  return (
+    <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center p-8">
+      <div className="max-w-md text-center space-y-4">
+        <div className="text-4xl mb-4">⚙️</div>
+        <h1 className="text-2xl font-bold text-white">Setup Required</h1>
+        <p className="text-gray-400">
+          Add your <span className="text-violet-400 font-mono">VITE_CLERK_PUBLISHABLE_KEY</span> secret in the Replit Secrets panel to enable login.
+        </p>
+        <p className="text-gray-500 text-sm">
+          Copy the Publishable key from your Clerk dashboard → API Keys and paste it into the Replit Secrets tab.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   if (!clerkPubKey) {
     return (
@@ -141,7 +158,7 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={basePath}>
             <Switch>
-              <Route path="/" component={Home} />
+              <Route path="/" component={MissingConfigPage} />
               <Route component={NotFound} />
             </Switch>
           </WouterRouter>
