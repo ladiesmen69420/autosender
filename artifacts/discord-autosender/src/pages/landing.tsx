@@ -33,10 +33,10 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white flex justify-center overflow-y-auto">
-      <div className="min-h-screen w-full max-w-[760px] flex flex-col border-x border-white/5 bg-[#0b0b0e]">
+    <div className="h-screen bg-[#0a0a0c] text-white flex justify-center overflow-hidden">
+      <div className="h-screen w-full max-w-[760px] flex flex-col border-x border-white/5 bg-[#0b0b0e]">
       {/* Left panel */}
-      <div className="flex flex-col justify-between px-8 py-10 md:px-12 md:py-14 relative">
+      <div className="flex flex-col justify-between px-8 py-7 md:px-12 md:py-8 relative flex-1 min-h-0">
         {/* Subtle background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-purple-950/20 via-transparent to-transparent pointer-events-none" />
 
@@ -48,34 +48,34 @@ export default function Landing() {
         </div>
 
         {/* Headline */}
-        <div className="relative flex flex-col justify-center py-14">
-          <h1 className="text-5xl md:text-6xl font-black leading-[1.0] tracking-tight mb-6">
+        <div className="relative flex flex-col justify-center py-7">
+          <h1 className="text-4xl md:text-5xl font-black leading-[1.0] tracking-tight mb-4">
             ADVERTISE<br />
             AROUND THE<br />
             CLOCK
           </h1>
-          <p className="text-gray-400 text-base md:text-lg max-w-md leading-relaxed mb-10">
+          <p className="text-gray-400 text-sm md:text-base max-w-md leading-relaxed mb-6">
             Automatically post your Discord messages in multiple channels all day, so more people
             see your offer without manual reposting.
           </p>
           <button
             onClick={handleGetStarted}
-            className="w-fit bg-purple-600 hover:bg-purple-500 text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-colors shadow-lg shadow-purple-900/30"
+            className="w-fit bg-purple-600 hover:bg-purple-500 text-white px-7 py-3 rounded-xl text-sm font-semibold transition-colors shadow-lg shadow-purple-900/30"
           >
             Get Started For Free
           </button>
         </div>
 
         {/* Spacer for bottom */}
-        <div className="h-4" />
+        <div className="h-1" />
       </div>
 
       {/* Right panel */}
-      <div className="w-full bg-[#0f0f12] border-t border-white/5 flex items-center justify-center px-8 py-14">
-        <div className="w-full max-w-sm flex flex-col items-center gap-6">
+      <div className="w-full bg-[#0f0f12] border-t border-white/5 flex items-center justify-center px-8 py-6 shrink-0">
+        <div className="w-full max-w-sm flex flex-col items-center gap-3">
           {/* App icon */}
-          <div className="w-16 h-16 rounded-2xl bg-[#1a1a20] border border-white/10 flex items-center justify-center shadow-xl">
-            <LightningIcon size={28} />
+          <div className="w-12 h-12 rounded-2xl bg-[#1a1a20] border border-white/10 flex items-center justify-center shadow-xl">
+            <LightningIcon size={22} />
           </div>
 
           {/* Title & subtitle */}

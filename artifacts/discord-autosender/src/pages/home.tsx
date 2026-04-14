@@ -700,8 +700,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex justify-center overflow-y-auto cyber-grid">
-      <div className="h-screen w-full max-w-[920px] flex overflow-hidden bg-background/95 border-x border-border/70">
+    <div className="h-screen flex bg-background text-foreground overflow-hidden">
       {/* Dialogs */}
       <CampaignLogDialog
         campaignId={logDialogId!}
@@ -712,7 +711,7 @@ export default function Home() {
       <TestSendDialog results={testResults} open={showTestDialog} onClose={() => setShowTestDialog(false)} />
 
       {/* Sidebar */}
-      <aside className="w-44 bg-sidebar border-r border-sidebar-border flex flex-col shrink-0">
+      <aside className="w-52 bg-sidebar border-r border-sidebar-border flex flex-col shrink-0">
         <div className="px-4 py-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2.5">
             <img src={logoUrl} alt="logo" className="w-8 h-8 rounded-xl shrink-0 object-cover" />
@@ -767,7 +766,7 @@ export default function Home() {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="border-b border-border bg-card/40 px-4 py-3.5 flex items-center justify-between shrink-0">
+        <header className="border-b border-border bg-card/40 px-6 py-3.5 flex items-center justify-between shrink-0">
           <div>
             <h1 className="text-base font-semibold text-foreground capitalize">{activeView === "ai-reply" ? "AI Reply" : activeView}</h1>
             <p className="text-xs text-muted-foreground">
@@ -782,17 +781,17 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4">
+        <main className="flex-1 overflow-y-auto p-6">
 
           {/* ── DASHBOARD ── */}
           {activeView === "dashboard" && (
-            <div className="space-y-5 max-w-2xl mx-auto">
+            <div className="space-y-5 max-w-5xl">
               <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-400/90">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                 <p className="text-xs leading-relaxed">Self-botting via user tokens violates Discord's Terms of Service and may result in account termination. Use at your own risk.</p>
               </div>
 
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl border border-border bg-card/60 p-4">
                   <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
                     <Activity className="w-3 h-3 text-primary" />Today
@@ -825,7 +824,7 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Campaigns", value: campaigns.length, icon: <Radio className="w-4 h-4" />, sub: `${runningCount} running`, color: "text-primary" },
                   { label: "Channels", value: campaigns.reduce((s, c) => s + c.channels.length, 0), icon: <MessageSquare className="w-4 h-4" />, sub: "All campaigns", color: "text-violet-300" },
@@ -842,7 +841,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { icon: <Shield className="w-3.5 h-3.5" />, label: "Anti-Detection", desc: "UA rotation + human delays + burst breaks", color: "text-cyan-400 border-cyan-400/20 bg-cyan-400/5" },
                   { icon: <Gauge className="w-3.5 h-3.5" />, label: "Adaptive Rate Limit", desc: "Auto-increases interval on 429 errors", color: "text-amber-400 border-amber-400/20 bg-amber-400/5" },
@@ -897,7 +896,7 @@ export default function Home() {
 
           {/* ── AUTOSENDER ── */}
           {activeView === "autosender" && (
-            <div className="max-w-xl mx-auto space-y-4">
+            <div className="max-w-xl space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] gap-1"><Activity className="w-2.5 h-2.5" />Server-side 24/7</Badge>
@@ -1140,8 +1139,8 @@ export default function Home() {
 
           {/* ── AI REPLY ── */}
           {activeView === "ai-reply" && (
-            <div className="max-w-xl mx-auto space-y-4">
-              <div className="grid grid-cols-1 gap-4">
+            <div className="max-w-5xl space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="rounded-xl border border-border bg-card/60 p-4 space-y-4">
                   <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Key className="w-3.5 h-3.5 text-primary" />Token & Persona</h3>
                   {saveUserSettings.isPending && (
@@ -1237,7 +1236,7 @@ export default function Home() {
 
           {/* ── TOKENS ── */}
           {activeView === "tokens" && (
-            <div className="max-w-xl mx-auto space-y-4">
+            <div className="max-w-2xl space-y-4">
               <div className="rounded-xl border border-border bg-card/60 p-5 space-y-4">
                 <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Key className="w-3.5 h-3.5 text-primary" />Validate Discord Token</h3>
                 <div className="flex gap-2">
@@ -1280,7 +1279,6 @@ export default function Home() {
           )}
 
         </main>
-      </div>
       </div>
     </div>
   );
