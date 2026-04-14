@@ -1,22 +1,21 @@
 import { useAuth } from "@clerk/react";
 import { useLocation } from "wouter";
-import previewImg from "@assets/image_1775526741335.png";
 
-const apiBase = `${import.meta.env.BASE_URL}api`;
-
-function DiscordLogo() {
+function LightningIcon({ size = 20 }: { size?: number }) {
   return (
-    <svg width="22" height="16" viewBox="0 0 22 16" fill="currentColor">
-      <path d="M18.59 1.34A18.2 18.2 0 0 0 14.07 0c-.19.34-.4.8-.55 1.16a16.88 16.88 0 0 0-5.04 0A12.6 12.6 0 0 0 7.93 0a18.24 18.24 0 0 0-4.53 1.34C.48 5.57-.29 9.69.09 13.75A18.37 18.37 0 0 0 5.67 16c.45-.61.86-1.26 1.2-1.95a11.9 11.9 0 0 1-1.89-.91c.16-.11.31-.23.46-.35a13.1 13.1 0 0 0 11.12 0c.15.12.3.24.46.35-.6.36-1.23.66-1.89.91.35.69.75 1.34 1.2 1.95a18.32 18.32 0 0 0 5.58-2.25c.46-4.68-.77-8.76-3.32-12.36ZM7.35 11.26c-1.09 0-1.98-.99-1.98-2.21s.87-2.21 1.98-2.21c1.1 0 2 .99 1.98 2.21 0 1.22-.88 2.21-1.98 2.21Zm7.3 0c-1.09 0-1.98-.99-1.98-2.21s.87-2.21 1.98-2.21c1.1 0 2 .99 1.98 2.21 0 1.22-.88 2.21-1.98 2.21Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M13 2L4.09 12.96A1 1 0 0 0 5 14.5h5.5L11 22l8.91-10.96A1 1 0 0 0 19 9.5H13.5L13 2Z" />
     </svg>
   );
 }
 
-function AppLogo() {
+function GoogleIcon() {
   return (
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-      <circle cx="12" cy="18" r="9" stroke="#3b82f6" strokeWidth="3.5" fill="none" />
-      <circle cx="24" cy="18" r="9" stroke="#3b82f6" strokeWidth="3.5" fill="none" />
+    <svg width="18" height="18" viewBox="0 0 24 24">
+      <path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09Z" />
+      <path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23Z" />
+      <path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84Z" />
+      <path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53Z" />
     </svg>
   );
 }
@@ -25,58 +24,97 @@ export default function Landing() {
   const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
 
-  const handleDiscordSignIn = () => {
+  const handleGetStarted = () => {
     if (isSignedIn) {
       setLocation("/app");
-      return;
+    } else {
+      setLocation("/sign-in");
     }
-    window.location.href = `${apiBase}/auth/discord`;
   };
 
-  const handleGetStarted = handleDiscordSignIn;
-
   return (
-    <div className="min-h-screen bg-[#0d0d0f] text-white flex flex-col">
-      <nav className="flex items-center justify-between px-8 py-5">
-        <div className="flex items-center gap-2.5">
-          <AppLogo />
-          <span className="font-semibold text-base tracking-wide text-gray-100">discord autosender</span>
-        </div>
-        <button
-          onClick={isSignedIn ? () => setLocation("/app") : handleDiscordSignIn}
-          className="flex items-center gap-2 bg-[#5865F2] hover:bg-[#4752c4] text-white px-5 py-2.5 rounded-lg font-semibold text-sm transition-colors shadow-lg"
-        >
-          <DiscordLogo />
-          {isSignedIn ? "Go to Dashboard" : "Sign in with Discord"}
-        </button>
-      </nav>
+    <div className="min-h-screen bg-[#0a0a0c] text-white flex flex-col md:flex-row overflow-hidden">
+      {/* Left panel */}
+      <div className="flex-1 flex flex-col justify-between px-10 py-10 md:py-16 relative">
+        {/* Subtle background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-950/20 via-transparent to-transparent pointer-events-none" />
 
-      <div className="flex flex-1 items-center px-8 py-8 gap-12 max-w-7xl mx-auto w-full">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-6xl font-black leading-[1.05] mb-6 tracking-tight">
+        {/* Logo */}
+        <div className="relative">
+          <div className="w-11 h-11 rounded-xl bg-purple-600 flex items-center justify-center shadow-lg shadow-purple-900/40">
+            <LightningIcon size={20} />
+          </div>
+        </div>
+
+        {/* Headline */}
+        <div className="relative flex-1 flex flex-col justify-center py-12 md:py-0">
+          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black leading-[1.0] tracking-tight mb-6">
             ADVERTISE<br />
             AROUND THE<br />
             CLOCK
           </h1>
-          <p className="text-gray-400 text-lg mb-10 max-w-md leading-relaxed">
+          <p className="text-gray-400 text-base md:text-lg max-w-md leading-relaxed mb-10">
             Automatically post your Discord messages in multiple channels all day, so more people
             see your offer without manual reposting.
           </p>
           <button
             onClick={handleGetStarted}
-            className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-colors shadow-lg"
+            className="w-fit bg-purple-600 hover:bg-purple-500 text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-colors shadow-lg shadow-purple-900/30"
           >
             Get Started For Free
           </button>
         </div>
 
-        <div className="flex-1 min-w-0 flex items-center justify-center">
-          <img
-            src={previewImg}
-            alt="App preview"
-            className="w-full max-w-lg rounded-2xl shadow-2xl"
-            draggable={false}
-          />
+        {/* Spacer for bottom */}
+        <div className="h-8 md:hidden" />
+      </div>
+
+      {/* Right panel */}
+      <div className="w-full md:w-[420px] lg:w-[480px] bg-[#0f0f12] border-l border-white/5 flex items-center justify-center px-8 py-14">
+        <div className="w-full max-w-sm flex flex-col items-center gap-6">
+          {/* App icon */}
+          <div className="w-16 h-16 rounded-2xl bg-[#1a1a20] border border-white/10 flex items-center justify-center shadow-xl">
+            <LightningIcon size={28} />
+          </div>
+
+          {/* Title & subtitle */}
+          <div className="text-center space-y-1.5">
+            <h2 className="text-2xl font-bold tracking-tight">DiscordSender</h2>
+            <p className="text-gray-400 text-sm leading-relaxed">
+              Automate your Discord messages.<br />Sign in to get started.
+            </p>
+          </div>
+
+          {/* Sign-in buttons */}
+          <div className="w-full space-y-3">
+            <button
+              onClick={handleGetStarted}
+              className="w-full flex items-center justify-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors shadow-lg shadow-purple-900/30"
+            >
+              <GoogleIcon />
+              Continue with Google or Email
+            </button>
+          </div>
+
+          {/* Feature tags */}
+          <div className="flex flex-wrap justify-center gap-2">
+            {["Scheduled Messages", "Multi-Server", "Campaigns"].map((tag) => (
+              <span
+                key={tag}
+                className="text-xs text-gray-400 border border-white/10 rounded-full px-3 py-1 bg-white/5"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          {/* ToS */}
+          <p className="text-xs text-gray-600 text-center leading-relaxed">
+            By signing in, you agree to our{" "}
+            <span className="text-gray-400 underline cursor-pointer">Terms of Service</span>{" "}
+            and{" "}
+            <span className="text-gray-400 underline cursor-pointer">Privacy Policy</span>.
+          </p>
         </div>
       </div>
     </div>
