@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useLayoutEffect } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,6 +10,23 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Landing from "@/pages/landing";
 import DiscordSignIn from "@/pages/discord-signin";
+
+function useHideClerkDevBanner() {
+  useLayoutEffect(() => {
+    function hideDevBanner() {
+      document.querySelectorAll<HTMLElement>("a").forEach((el) => {
+        if (el.href?.includes("clerk.com") && el.textContent?.includes("Development")) {
+          const parent = el.closest<HTMLElement>('[class*="cl-"]') ?? el;
+          parent.style.setProperty("display", "none", "important");
+        }
+      });
+    }
+    hideDevBanner();
+    const observer = new MutationObserver(hideDevBanner);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+}
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
@@ -30,6 +47,12 @@ const queryClient = new QueryClient({
   },
 });
 
+const clerkNoDevBanner = {
+  elements: {
+    footer: { display: "none" },
+  },
+};
+
 function SignInPage() {
   return (
     <div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
@@ -38,6 +61,7 @@ function SignInPage() {
         path={`${basePath}/sign-in`}
         signUpUrl={`${basePath}/sign-up`}
         fallbackRedirectUrl={`${basePath}/app`}
+        appearance={clerkNoDevBanner}
       />
     </div>
   );
@@ -51,6 +75,7 @@ function SignUpPage() {
         path={`${basePath}/sign-up`}
         signInUrl={`${basePath}/sign-in`}
         fallbackRedirectUrl={`${basePath}/app`}
+        appearance={clerkNoDevBanner}
       />
     </div>
   );
@@ -110,6 +135,12 @@ function ClerkProviderWithRoutes() {
       proxyUrl={clerkProxyUrl}
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+      appearance={{
+        elements: {
+          badge__devMode: { display: "none" },
+          devBrowser: { display: "none" },
+        },
+      }}
     >
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
@@ -152,6 +183,8 @@ function MissingConfigPage() {
 }
 
 function App() {
+  useHideClerkDevBanner();
+
   if (!clerkPubKey) {
     return (
       <QueryClientProvider client={queryClient}>

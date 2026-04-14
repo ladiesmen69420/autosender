@@ -213,6 +213,14 @@
   box-shadow: 0 0 16px rgba(139, 92, 246, 0.12);
 }
 
+/* Hide Clerk development mode indicators */
+[class*="cl-devBrowser"],
+[class*="devBrowser"],
+[class*="badge__devMode"],
+[data-localization-key="badge__devMode"] {
+  display: none !important;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 4px;
