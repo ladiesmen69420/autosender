@@ -33,10 +33,10 @@ export default function Landing() {
   };
 
   return (
-    <div className="h-screen bg-[#0a0a0c] text-white flex justify-center overflow-hidden">
-      <div className="h-screen w-full max-w-[840px] flex flex-col border-x border-white/5 bg-[#0b0b0e]">
+    <div className="h-screen bg-[#0a0a0c] text-white overflow-hidden">
+      <div className="h-screen w-full flex flex-col bg-[#0b0b0e]">
       {/* Left panel */}
-      <div className="flex flex-col justify-between px-8 py-5 md:px-12 md:py-6 relative flex-1 min-h-0">
+      <div className="flex flex-col justify-between px-8 py-5 md:px-16 lg:px-20 md:py-6 relative flex-1 min-h-0">
         {/* Subtle background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-purple-950/20 via-transparent to-transparent pointer-events-none" />
 
@@ -49,18 +49,18 @@ export default function Landing() {
 
         {/* Headline */}
         <div className="relative flex flex-col justify-center py-4">
-          <h1 className="text-5xl font-black leading-[1.0] tracking-tight mb-4">
+          <h1 className="text-6xl font-black leading-[0.95] tracking-tight mb-4">
             ADVERTISE<br />
             AROUND THE<br />
             CLOCK
           </h1>
-          <p className="text-gray-400 text-base max-w-md leading-relaxed mb-5">
+          <p className="text-gray-400 text-lg max-w-2xl leading-relaxed mb-5">
             Automatically post your Discord messages in multiple channels all day, so more people
             see your offer without manual reposting.
           </p>
           <button
             onClick={handleGetStarted}
-            className="w-fit bg-purple-600 hover:bg-purple-500 text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-colors shadow-lg shadow-purple-900/30"
+            className="w-fit bg-purple-600 hover:bg-purple-500 text-white px-9 py-4 rounded-xl text-lg font-semibold transition-colors shadow-lg shadow-purple-900/30"
           >
             Get Started For Free
           </button>
@@ -71,17 +71,17 @@ export default function Landing() {
       </div>
 
       {/* Right panel */}
-      <div className="w-full h-[285px] bg-[#0f0f12] border-t border-white/5 flex items-center justify-center px-8 py-4 shrink-0 overflow-hidden">
-        <div className="w-full max-w-md flex flex-col items-center gap-2.5">
+      <div className="w-full h-[300px] bg-[#0f0f12] border-t border-white/5 flex items-center justify-center px-8 py-4 shrink-0 overflow-hidden">
+        <div className="w-full max-w-xl flex flex-col items-center gap-2.5">
           {/* App icon */}
-          <div className="w-12 h-12 rounded-2xl bg-[#1a1a20] border border-white/10 flex items-center justify-center shadow-xl">
-            <LightningIcon size={22} />
+          <div className="w-14 h-14 rounded-2xl bg-[#1a1a20] border border-white/10 flex items-center justify-center shadow-xl">
+            <LightningIcon size={25} />
           </div>
 
           {/* Title & subtitle */}
           <div className="text-center space-y-1.5">
-            <h2 className="text-xl font-bold tracking-tight">DiscordSender</h2>
-            <p className="text-gray-400 text-xs leading-relaxed">
+            <h2 className="text-2xl font-bold tracking-tight">DiscordSender</h2>
+            <p className="text-gray-400 text-sm leading-relaxed">
               Automate your Discord messages.<br />Sign in to get started.
             </p>
           </div>
@@ -90,7 +90,7 @@ export default function Landing() {
           <div className="w-full space-y-2">
             <button
               onClick={handleGetStarted}
-              className="w-full flex items-center justify-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white py-2.5 rounded-xl font-semibold text-sm transition-colors shadow-lg shadow-purple-900/30"
+              className="w-full flex items-center justify-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl font-semibold text-base transition-colors shadow-lg shadow-purple-900/30"
             >
               <GoogleIcon />
               Continue with Google or Email
