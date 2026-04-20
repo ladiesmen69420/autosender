@@ -33,10 +33,9 @@ export default function Landing() {
   };
 
   return (
-    <div className="h-screen bg-[#0a0a0c] text-white overflow-hidden" style={{ fontSize: "118%" }}>
-      <div className="h-screen w-full flex flex-col bg-[#0b0b0e]">
+    <div className="min-h-screen bg-[#0a0a0c] text-white flex flex-col md:flex-row overflow-hidden">
       {/* Left panel */}
-      <div className="flex flex-col justify-between px-8 py-5 md:px-16 lg:px-20 md:py-6 relative flex-1 min-h-0">
+      <div className="flex-1 flex flex-col justify-between px-10 py-10 md:py-16 relative">
         {/* Subtle background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-purple-950/20 via-transparent to-transparent pointer-events-none" />
 
@@ -49,33 +48,33 @@ export default function Landing() {
 
         {/* Headline */}
         <div className="relative flex flex-col justify-center py-4">
-          <h1 className="text-6xl font-black leading-[0.95] tracking-tight mb-4">
+          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black leading-[1.0] tracking-tight mb-6">
             ADVERTISE<br />
             AROUND THE<br />
             CLOCK
           </h1>
-          <p className="text-gray-400 text-lg max-w-2xl leading-relaxed mb-5">
+          <p className="text-gray-400 text-base md:text-lg max-w-md leading-relaxed mb-10">
             Automatically post your Discord messages in multiple channels all day, so more people
             see your offer without manual reposting.
           </p>
           <button
             onClick={handleGetStarted}
-            className="w-fit bg-purple-600 hover:bg-purple-500 text-white px-9 py-4 rounded-xl text-lg font-semibold transition-colors shadow-lg shadow-purple-900/30"
+            className="w-fit bg-purple-600 hover:bg-purple-500 text-white px-8 py-3.5 rounded-xl text-base font-semibold transition-colors shadow-lg shadow-purple-900/30"
           >
             Get Started For Free
           </button>
         </div>
 
         {/* Spacer for bottom */}
-        <div className="h-0" />
+        <div className="h-8 md:hidden" />
       </div>
 
       {/* Right panel */}
-      <div className="w-full h-[300px] bg-[#0f0f12] border-t border-white/5 flex items-center justify-center px-8 py-4 shrink-0 overflow-hidden">
-        <div className="w-full max-w-xl flex flex-col items-center gap-2.5">
+      <div className="w-full md:w-[420px] lg:w-[480px] bg-[#0f0f12] border-l border-white/5 flex items-center justify-center px-8 py-14">
+        <div className="w-full max-w-sm flex flex-col items-center gap-6">
           {/* App icon */}
-          <div className="w-14 h-14 rounded-2xl bg-[#1a1a20] border border-white/10 flex items-center justify-center shadow-xl">
-            <LightningIcon size={25} />
+          <div className="w-16 h-16 rounded-2xl bg-[#1a1a20] border border-white/10 flex items-center justify-center shadow-xl">
+            <LightningIcon size={28} />
           </div>
 
           {/* Title & subtitle */}
@@ -87,10 +86,10 @@ export default function Landing() {
           </div>
 
           {/* Sign-in buttons */}
-          <div className="w-full space-y-2">
+          <div className="w-full space-y-3">
             <button
               onClick={handleGetStarted}
-              className="w-full flex items-center justify-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl font-semibold text-base transition-colors shadow-lg shadow-purple-900/30"
+              className="w-full flex items-center justify-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors shadow-lg shadow-purple-900/30"
             >
               <GoogleIcon />
               Continue with Google or Email
@@ -117,7 +116,6 @@ export default function Landing() {
             <span className="text-gray-400 underline cursor-pointer">Privacy Policy</span>.
           </p>
         </div>
-      </div>
       </div>
     </div>
   );
