@@ -49,6 +49,18 @@ type CampaignLog = {
 
 type TestResult = { channelId: string; success: boolean; status: number; error?: string; suggestion?: string };
 
+type AiReplyCampaign = {
+  id: number;
+  userId: string | null;
+  name: string;
+  token: string;
+  persona: string;
+  mode: "ai" | "fixed";
+  fixedMessage: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const API = `${import.meta.env.BASE_URL}api`;
 
 /* ─── Hooks ─────────────────────────────────────────────── */
@@ -102,6 +114,61 @@ function useSaveUserSettings() {
       return res.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["user-settings"] }),
+  });
+}
+
+function useGetAiReplyCampaigns() {
+  return useQuery<AiReplyCampaign[]>({
+    queryKey: ["ai-reply-campaigns"],
+    queryFn: async () => {
+      const res = await fetch(`${API}/ai-reply-campaigns`);
+      if (!res.ok) throw new Error("Failed to fetch AI reply campaigns");
+      return res.json();
+    },
+  });
+}
+
+function useCreateAiReplyCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; token: string; persona: string; mode: "ai" | "fixed"; fixedMessage: string }) => {
+      const res = await fetch(`${API}/ai-reply-campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create AI reply campaign");
+      return res.json() as Promise<AiReplyCampaign>;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-reply-campaigns"] }),
+  });
+}
+
+function useUpdateAiReplyCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: number; name: string; token: string; persona: string; mode: "ai" | "fixed"; fixedMessage: string }) => {
+      const res = await fetch(`${API}/ai-reply-campaigns/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update AI reply campaign");
+      return res.json() as Promise<AiReplyCampaign>;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-reply-campaigns"] }),
+  });
+}
+
+function useDeleteAiReplyCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${API}/ai-reply-campaigns/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete AI reply campaign");
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-reply-campaigns"] }),
   });
 }
 
@@ -470,6 +537,10 @@ export default function Home() {
   const generateAIReplyMutation = useGenerateAIReply();
   const runAutoReplyMutation = useRunAutoReply();
   const fetchDMsMutation = useFetchDMs();
+  const { data: aiReplyCampaigns = [], isLoading: aiReplyCampaignsLoading } = useGetAiReplyCampaigns();
+  const createAiReplyCampaign = useCreateAiReplyCampaign();
+  const updateAiReplyCampaign = useUpdateAiReplyCampaign();
+  const deleteAiReplyCampaign = useDeleteAiReplyCampaign();
 
   const { data: campaigns = [], isLoading: campaignsLoading } = useGetCampaigns();
   const createCampaign = useCreateCampaign();
@@ -506,6 +577,10 @@ export default function Home() {
   const [aiContext, setAiContext] = useLocalState("bb_ai_context", "");
   const [aiChannelId, setAiChannelId] = useLocalState("bb_ai_channel", "");
   const [generatedReply, setGeneratedReply] = useLocalState("bb_ai_reply", "");
+  const [aiReplyCampaignName, setAiReplyCampaignName] = useLocalState("bb_ai_campaign_name", "DM Reply Campaign");
+  const [selectedAiReplyCampaignId, setSelectedAiReplyCampaignId] = useLocalState<number | null>("bb_ai_campaign_id", null);
+  const [aiReplyMode, setAiReplyMode] = useLocalState<"ai" | "fixed">("bb_ai_reply_mode", "ai");
+  const [fixedAutoReply, setFixedAutoReply] = useLocalState("bb_fixed_auto_reply", "");
   const [dms, setDMs] = useState<DMConversation[]>([]);
   const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
   const autoReplyRef = useRef(autoReplyEnabled);
@@ -569,16 +644,23 @@ export default function Home() {
 
   useEffect(() => {
     if (!autoReplyEnabled || !aiToken) return;
+    if (aiReplyMode === "fixed" && !fixedAutoReply.trim()) return;
     const run = async () => {
       if (!autoReplyRef.current) return;
       try {
-        await runAutoReplyMutation.mutateAsync({ data: { token: aiToken, persona: aiPersona || undefined } });
+        await runAutoReplyMutation.mutateAsync({
+          data: {
+            token: aiToken,
+            persona: aiReplyMode === "ai" ? aiPersona || undefined : undefined,
+            fixedMessage: aiReplyMode === "fixed" ? fixedAutoReply : undefined,
+          },
+        });
       } catch {}
     };
     run();
     const id = setInterval(run, 60000);
     return () => clearInterval(id);
-  }, [autoReplyEnabled, aiToken]);
+  }, [autoReplyEnabled, aiToken, aiPersona, aiReplyMode, fixedAutoReply]);
 
   const handleValidateToken = async () => {
     if (!tokenInput) return;
@@ -684,6 +766,57 @@ export default function Home() {
       if (res.sent) toast({ title: "Reply Sent" });
       else toast({ title: "Reply Generated" });
     } catch { toast({ title: "Error", description: "Failed to generate reply.", variant: "destructive" }); }
+  };
+
+  const handleApplyAiReplyCampaign = (campaign: AiReplyCampaign) => {
+    setSelectedAiReplyCampaignId(campaign.id);
+    setAiReplyCampaignName(campaign.name);
+    setAiToken(campaign.token);
+    setAiPersona(campaign.persona);
+    setAiReplyMode(campaign.mode);
+    setFixedAutoReply(campaign.fixedMessage);
+    toast({ title: "Campaign Loaded", description: campaign.name });
+  };
+
+  const handleSaveAiReplyCampaign = async () => {
+    const name = aiReplyCampaignName.trim();
+    if (!name) {
+      toast({ title: "Missing name", description: "Name your AI reply campaign first.", variant: "destructive" });
+      return;
+    }
+    if (!aiToken) {
+      toast({ title: "No token", description: "Enter a Discord token before saving.", variant: "destructive" });
+      return;
+    }
+    if (aiReplyMode === "fixed" && !fixedAutoReply.trim()) {
+      toast({ title: "No fixed message", description: "Enter the message to auto-send in fixed mode.", variant: "destructive" });
+      return;
+    }
+
+    const data = { name, token: aiToken, persona: aiPersona, mode: aiReplyMode, fixedMessage: fixedAutoReply };
+    try {
+      if (selectedAiReplyCampaignId) {
+        await updateAiReplyCampaign.mutateAsync({ id: selectedAiReplyCampaignId, ...data });
+        toast({ title: "Campaign Saved", description: name });
+      } else {
+        const created = await createAiReplyCampaign.mutateAsync(data);
+        setSelectedAiReplyCampaignId(created.id);
+        toast({ title: "Campaign Created", description: created.name });
+      }
+    } catch {
+      toast({ title: "Error", description: "Could not save AI reply campaign.", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteAiReplyCampaign = async () => {
+    if (!selectedAiReplyCampaignId) return;
+    try {
+      await deleteAiReplyCampaign.mutateAsync(selectedAiReplyCampaignId);
+      setSelectedAiReplyCampaignId(null);
+      toast({ title: "Campaign Deleted" });
+    } catch {
+      toast({ title: "Error", description: "Could not delete AI reply campaign.", variant: "destructive" });
+    }
   };
 
   const runningCount = campaigns.filter((c) => c.running).length;
@@ -1142,27 +1275,84 @@ export default function Home() {
             <div className="max-w-5xl space-y-4">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="rounded-xl border border-border bg-card/60 p-4 space-y-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Key className="w-3.5 h-3.5 text-primary" />Token & Persona</h3>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Key className="w-3.5 h-3.5 text-primary" />AI Reply Campaign</h3>
+                    <Badge className={`${aiReplyMode === "fixed" ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" : "bg-primary/10 text-primary border-primary/20"} text-[10px]`}>
+                      {aiReplyMode === "fixed" ? "Fixed Message" : "Humanized AI"}
+                    </Badge>
+                  </div>
                   {saveUserSettings.isPending && (
                     <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
                       <Loader2 className="w-3 h-3 animate-spin" />Saving to your account...
                     </div>
                   )}
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Campaign Name</Label>
+                      <Input value={aiReplyCampaignName} onChange={(e) => setAiReplyCampaignName(e.target.value)} className="h-8 text-sm bg-input border-border rounded-xl" placeholder="e.g. Friendly DM Replies" />
+                    </div>
+                    <div className="flex items-end gap-1.5">
+                      <Button size="sm" className="h-8 bg-primary/80 hover:bg-primary rounded-xl" onClick={handleSaveAiReplyCampaign} disabled={createAiReplyCampaign.isPending || updateAiReplyCampaign.isPending}>
+                        {(createAiReplyCampaign.isPending || updateAiReplyCampaign.isPending) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Save className="w-3.5 h-3.5 mr-1" />Save</>}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 rounded-xl" onClick={() => { setSelectedAiReplyCampaignId(null); setAiReplyCampaignName(`DM Reply Campaign ${aiReplyCampaigns.length + 1}`); }}>
+                        New
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {aiReplyCampaignsLoading ? (
+                      <div className="text-[11px] text-muted-foreground font-mono">Loading saved campaigns...</div>
+                    ) : aiReplyCampaigns.length === 0 ? (
+                      <div className="text-[11px] text-muted-foreground border border-dashed border-border/50 rounded-xl px-3 py-2">No saved AI reply campaigns yet.</div>
+                    ) : (
+                      aiReplyCampaigns.map((campaign) => (
+                        <button key={campaign.id} onClick={() => handleApplyAiReplyCampaign(campaign)}
+                          className={`text-left rounded-xl border px-3 py-2 transition-colors ${selectedAiReplyCampaignId === campaign.id ? "border-primary/50 bg-primary/10" : "border-border bg-background/30 hover:border-primary/30"}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium truncate flex-1">{campaign.name}</span>
+                            <span className="text-[9px] uppercase tracking-widest text-muted-foreground">{campaign.mode}</span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            {campaign.mode === "fixed" ? campaign.fixedMessage || "Fixed message" : campaign.persona || "Default humanized AI"}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
                   <div>
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Discord Token (for DMs)</Label>
                     <Input type="password" placeholder="Enter token to fetch DMs and auto-reply..." value={aiToken} onChange={(e) => setAiToken(e.target.value)} className="font-mono text-sm bg-input border-border rounded-xl" />
                   </div>
                   <div>
+                    <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Auto-Reply Mode</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => setAiReplyMode("ai")} className={`rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${aiReplyMode === "ai" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                        Humanized AI
+                      </button>
+                      <button onClick={() => setAiReplyMode("fixed")} className={`rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${aiReplyMode === "fixed" ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-400" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                        Fixed Message
+                      </button>
+                    </div>
+                  </div>
+                  <div>
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest"><span className="flex items-center gap-1.5"><Cpu className="w-3 h-3 text-primary" />AI Persona (optional)</span></Label>
                     <Textarea placeholder="e.g. You are a friendly gamer. Keep replies casual and short..." value={aiPersona} onChange={(e) => setAiPersona(e.target.value)} className="min-h-[80px] text-sm resize-y bg-input border-border rounded-xl" />
                   </div>
+                  {aiReplyMode === "fixed" && (
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Fixed Auto-Reply Message</Label>
+                      <Textarea placeholder="This exact message will be sent to any pending DM..." value={fixedAutoReply} onChange={(e) => setFixedAutoReply(e.target.value)} className="min-h-[80px] text-sm resize-y bg-input border-border rounded-xl" />
+                    </div>
+                  )}
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <Label className="text-sm font-medium cursor-pointer">Auto-Reply</Label>
-                      <p className="text-[10px] text-muted-foreground">Scan and reply to DMs every 60s</p>
+                      <p className="text-[10px] text-muted-foreground">Scan and reply to DMs every 60s using {aiReplyMode === "fixed" ? "your fixed message" : "humanized AI"}</p>
                     </div>
                     <Switch checked={autoReplyEnabled} onCheckedChange={(v) => {
                       if (v && !aiToken) { toast({ title: "No token", description: "Enter a Discord token above.", variant: "destructive" }); return; }
+                      if (v && aiReplyMode === "fixed" && !fixedAutoReply.trim()) { toast({ title: "No fixed message", description: "Enter a fixed auto-reply message first.", variant: "destructive" }); return; }
                       setAutoReplyEnabled(v);
                     }} />
                   </div>
@@ -1170,6 +1360,11 @@ export default function Home() {
                     <div className="flex items-center gap-2 text-xs text-green-400 bg-green-400/5 border border-green-400/20 rounded-xl px-3 py-2">
                       <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />Active — scanning every 60s
                     </div>
+                  )}
+                  {selectedAiReplyCampaignId && (
+                    <Button size="sm" variant="ghost" className="w-full h-8 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={handleDeleteAiReplyCampaign} disabled={deleteAiReplyCampaign.isPending}>
+                      {deleteAiReplyCampaign.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Trash2 className="w-3.5 h-3.5 mr-1.5" />Delete Selected Campaign</>}
+                    </Button>
                   )}
                 </div>
 

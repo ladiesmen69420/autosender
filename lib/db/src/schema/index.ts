@@ -21,3 +21,4 @@ export * from "./sessions";
 export * from "./campaigns";
 export * from "./campaign-logs";
 export * from "./user-settings";
+export * from "./ai-reply-campaigns";

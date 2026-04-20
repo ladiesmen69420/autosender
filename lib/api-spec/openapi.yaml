@@ -330,6 +330,9 @@ components:
         persona:
           type: string
           description: AI persona/instructions for generating replies
+        fixedMessage:
+          type: string
+          description: Optional exact message to send instead of generating an AI reply
       required:
         - token
 

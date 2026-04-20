@@ -10,4 +10,6 @@ export interface RunAutoReplyBody {
   token: string;
   /** AI persona/instructions for generating replies */
   persona?: string;
+  /** Optional exact message to send instead of generating an AI reply */
+  fixedMessage?: string;
 }

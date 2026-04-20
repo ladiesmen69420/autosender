@@ -15,6 +15,18 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router = Router();
 
+function makeHumanizedPrompt(persona?: string): string {
+  const variants = [
+    "Use a casual, human rhythm with small imperfections when natural.",
+    "Sound like a real person typing a quick Discord DM, not an assistant.",
+    "Keep it relaxed, specific to the message, and avoid polished marketing language.",
+  ];
+  const style = variants[Math.floor(Math.random() * variants.length)];
+  return persona
+    ? `You are a Discord user replying to a direct message. ${persona}. ${style} Write 1-2 short sentences. Do not announce that you are AI. Avoid markdown, hashtags, sign-offs, and robotic phrases like "I understand" unless they truly fit.`
+    : `You are a Discord user replying to a direct message. ${style} Match the sender's tone. Write 1-2 short sentences. Do not announce that you are AI. Avoid markdown, hashtags, sign-offs, and robotic phrases like "I understand" unless they truly fit.`;
+}
+
 router.post("/validate-token", async (req, res) => {
   const parsed = ValidateTokenBody.safeParse(req.body);
   if (!parsed.success) {
@@ -189,16 +201,14 @@ router.post("/ai-reply", async (req, res) => {
   const { context, persona, token, channelId } = parsed.data;
 
   try {
-    const systemPrompt = persona
-      ? `You are a Discord user replying to a direct message. ${persona}. Keep replies natural, conversational, and concise (1-3 sentences max). Do not use markdown formatting or emojis unless they fit naturally.`
-      : `You are a Discord user replying to a direct message. Keep replies natural, conversational, and concise (1-3 sentences max). Match the tone of the conversation. Do not use markdown formatting unless it fits naturally.`;
+    const systemPrompt = makeHumanizedPrompt(persona);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-5.2",
       max_completion_tokens: 200,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Reply to this message: "${context}"` },
+        { role: "user", content: `Reply naturally to this Discord DM. Message/context: "${context}"` },
       ],
     });
 
@@ -235,7 +245,7 @@ router.post("/auto-reply", async (req, res) => {
     return;
   }
 
-  const { token, persona } = parsed.data;
+  const { token, persona, fixedMessage } = parsed.data;
 
   try {
     // Get current user
@@ -263,9 +273,7 @@ router.post("/auto-reply", async (req, res) => {
       recipients?: Array<{ id: string; username: string; avatar: string | null }>;
     }>;
 
-    const systemPrompt = persona
-      ? `You are a Discord user replying to a direct message. ${persona}. Keep replies natural, conversational, and concise (1-3 sentences max). Do not use markdown formatting or emojis unless they fit naturally.`
-      : `You are a Discord user replying to a direct message. Keep replies natural, conversational, and concise (1-3 sentences max). Match the tone of the conversation. Do not use markdown formatting unless it fits naturally.`;
+    const systemPrompt = makeHumanizedPrompt(persona);
 
     const details: Array<{ username: string; channelId: string; reply: string; success: boolean }> = [];
     let replied = 0;
@@ -293,17 +301,24 @@ router.post("/auto-reply", async (req, res) => {
         const lastMsg = msgs[0];
         const recipient = channel.recipients?.[0];
 
-        // Generate AI reply
-        const completion = await openai.chat.completions.create({
-          model: "gpt-5.2",
-          max_completion_tokens: 200,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: `Reply to this message: "${lastMsg.content}"` },
-          ],
-        });
+        let reply = fixedMessage?.trim() ?? "";
+        if (!reply) {
+          const completion = await openai.chat.completions.create({
+            model: "gpt-5.2",
+            max_completion_tokens: 200,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: `Reply naturally to this Discord DM. Message/context: "${lastMsg.content}"` },
+            ],
+          });
 
-        const reply = completion.choices[0]?.message?.content?.trim() ?? "";
+          reply = completion.choices[0]?.message?.content?.trim() ?? "";
+        }
+
+        if (!reply) {
+          skipped++;
+          continue;
+        }
 
         // Send the reply
         const sendRes = await fetch(

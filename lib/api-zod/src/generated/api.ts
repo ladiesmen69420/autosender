@@ -102,6 +102,12 @@ export const RunAutoReplyBody = zod.object({
     .string()
     .optional()
     .describe("AI persona\/instructions for generating replies"),
+  fixedMessage: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional exact message to send instead of generating an AI reply",
+    ),
 });
 
 export const RunAutoReplyResponse = zod.object({

@@ -34,7 +34,7 @@ lib/
 
 1. **Dashboard** — Stats overview, quick actions, recent activity log
 2. **AutoSender** — Broadcast messages to multiple channels with configurable delay, jitter, repeat bypass, and saved presets
-3. **AI Reply** — Generate natural DM replies with a custom persona, auto-reply mode (60s scan), DM conversation browser
+3. **AI Reply** — Generate humanized DM replies with a custom persona, save AI reply campaigns/presets, fixed-message auto-reply mode, auto-reply scan every 60s, DM conversation browser
 4. **Tokens** — Validate Discord user tokens with live account info
 5. **Logs** — Real-time filterable activity log
 
@@ -45,6 +45,11 @@ lib/
 - `delay` (int, default 5), `repeat_bypass` (bool), `jitter` (int, default 0)
 - `created_at` (timestamp)
 
+### `ai_reply_campaigns` table
+- `id` (serial PK), `user_id` (text), `name` (text), `token` (text)
+- `persona` (text), `mode` (`ai` or `fixed`), `fixed_message` (text)
+- `created_at`, `updated_at` (timestamp)
+
 ## API Routes (`/api/discord/*`)
 
 | Method | Path | Description |
@@ -53,10 +58,19 @@ lib/
 | POST | /send-messages | Send to multiple channels |
 | POST | /dms | Fetch DM conversations |
 | POST | /ai-reply | Generate + optionally send AI reply |
-| POST | /auto-reply | Scan all DMs and auto-reply with AI |
+| POST | /auto-reply | Scan all DMs and auto-reply with AI, or send a fixed message when `fixedMessage` is provided |
 | GET | /sessions | List saved presets |
 | POST | /sessions | Create preset |
 | DELETE | /sessions/:id | Delete preset |
+
+## API Routes (`/api/ai-reply-campaigns/*`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | / | List saved AI reply campaigns |
+| POST | / | Create an AI reply campaign |
+| PUT | /:id | Update an AI reply campaign |
+| DELETE | /:id | Delete an AI reply campaign |
 
 ## Key Implementation Details
 
