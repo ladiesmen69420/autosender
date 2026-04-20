@@ -33,7 +33,7 @@ export default function Landing() {
   };
 
   return (
-    <div className="h-screen bg-[#0a0a0c] text-white overflow-hidden">
+    <div className="h-screen bg-[#0a0a0c] text-white overflow-hidden" style={{ fontSize: "118%" }}>
       <div className="h-screen w-full flex flex-col bg-[#0b0b0e]">
       {/* Left panel */}
       <div className="flex flex-col justify-between px-8 py-5 md:px-16 lg:px-20 md:py-6 relative flex-1 min-h-0">
