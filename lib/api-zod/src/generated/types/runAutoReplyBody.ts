@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { RunAutoReplyBodySentCountsByChannel } from "./runAutoReplyBodySentCountsByChannel";
 
 export interface RunAutoReplyBody {
   token: string;
@@ -14,6 +15,8 @@ export interface RunAutoReplyBody {
   fixedMessage?: string;
   /** If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive) */
   triggerKeywords?: string[];
-  /** Maximum number of replies to send in this run (0 = unlimited) */
-  maxReplies?: number;
+  /** Maximum number of fixed-message replies allowed per recipient/channel (0 = unlimited) */
+  maxRepliesPerUser?: number;
+  /** Map of channelId → how many fixed replies have already been sent to that channel; channels at or above the per-user cap will be skipped */
+  sentCountsByChannel?: RunAutoReplyBodySentCountsByChannel;
 }

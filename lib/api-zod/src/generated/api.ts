@@ -114,10 +114,18 @@ export const RunAutoReplyBody = zod.object({
     .describe(
       "If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive)",
     ),
-  maxReplies: zod
+  maxRepliesPerUser: zod
     .number()
     .optional()
-    .describe("Maximum number of replies to send in this run (0 = unlimited)"),
+    .describe(
+      "Maximum number of fixed-message replies allowed per recipient\/channel (0 = unlimited)",
+    ),
+  sentCountsByChannel: zod
+    .record(zod.string(), zod.number())
+    .optional()
+    .describe(
+      "Map of channelId → how many fixed replies have already been sent to that channel; channels at or above the per-user cap will be skipped",
+    ),
 });
 
 export const RunAutoReplyResponse = zod.object({

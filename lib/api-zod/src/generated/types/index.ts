@@ -16,6 +16,7 @@ export * from "./generateAIReplyBody";
 export * from "./generateAIReplyResult";
 export * from "./healthStatus";
 export * from "./runAutoReplyBody";
+export * from "./runAutoReplyBodySentCountsByChannel";
 export * from "./runAutoReplyResult";
 export * from "./sendMessagesBody";
 export * from "./sendResult";

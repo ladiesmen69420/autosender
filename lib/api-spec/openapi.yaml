@@ -338,9 +338,14 @@ components:
           items:
             type: string
           description: If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive)
-        maxReplies:
+        maxRepliesPerUser:
           type: integer
-          description: Maximum number of replies to send in this run (0 = unlimited)
+          description: Maximum number of fixed-message replies allowed per recipient/channel (0 = unlimited)
+        sentCountsByChannel:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Map of channelId → how many fixed replies have already been sent to that channel; channels at or above the per-user cap will be skipped
       required:
         - token
 

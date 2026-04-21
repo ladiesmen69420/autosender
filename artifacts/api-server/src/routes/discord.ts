@@ -276,11 +276,12 @@ router.post("/auto-reply", async (req, res) => {
     return;
   }
 
-  const { token, persona, fixedMessage, triggerKeywords, maxReplies } = parsed.data;
+  const { token, persona, fixedMessage, triggerKeywords, maxRepliesPerUser, sentCountsByChannel } = parsed.data;
   const triggers = (triggerKeywords ?? [])
     .map((k) => k.trim().toLowerCase())
     .filter((k) => k.length > 0);
-  const replyCap = typeof maxReplies === "number" && maxReplies > 0 ? maxReplies : Infinity;
+  const perUserCap = typeof maxRepliesPerUser === "number" && maxRepliesPerUser > 0 ? maxRepliesPerUser : Infinity;
+  const sentCounts: Record<string, number> = sentCountsByChannel ?? {};
 
   try {
     // Get current user
@@ -317,7 +318,11 @@ router.post("/auto-reply", async (req, res) => {
     let skipped = 0;
 
     for (const channel of channels.slice(0, 15)) {
-      if (replied >= replyCap) break;
+      // Per-recipient cap: skip channels that have already received the max fixed replies
+      if ((sentCounts[channel.id] ?? 0) >= perUserCap) {
+        skipped++;
+        continue;
+      }
       try {
         if (channels.indexOf(channel) > 0) await jitter(800, 2400);
         const msgsRes = await fetch(

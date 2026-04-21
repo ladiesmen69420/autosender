@@ -584,7 +584,7 @@ export default function Home() {
   const [fixedAutoReply, setFixedAutoReply] = useLocalState("bb_fixed_auto_reply", "");
   const [triggerKeywordsInput, setTriggerKeywordsInput] = useLocalState("bb_trigger_keywords", "");
   const [maxFixedReplies, setMaxFixedReplies] = useLocalState<number>("bb_max_fixed_replies", 0);
-  const [fixedSentCount, setFixedSentCount] = useLocalState<number>("bb_fixed_sent_count", 0);
+  const [fixedSentByChannel, setFixedSentByChannel] = useLocalState<Record<string, number>>("bb_fixed_sent_by_channel", {});
   const [dms, setDMs] = useState<DMConversation[]>([]);
   const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
   const autoReplyRef = useRef(autoReplyEnabled);
@@ -656,8 +656,6 @@ export default function Home() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
     const run = async () => {
-      const remaining = useFixed && maxFixedReplies > 0 ? maxFixedReplies - fixedSentCount : 0;
-      if (useFixed && maxFixedReplies > 0 && remaining <= 0) return;
       try {
         const res = await runAutoReplyMutation.mutateAsync({
           data: {
@@ -665,18 +663,28 @@ export default function Home() {
             persona: useFixed ? undefined : (aiPersona || undefined),
             fixedMessage: useFixed ? fixedAutoReply : undefined,
             triggerKeywords: triggers.length > 0 ? triggers : undefined,
-            maxReplies: useFixed && maxFixedReplies > 0 ? remaining : undefined,
+            maxRepliesPerUser: useFixed && maxFixedReplies > 0 ? maxFixedReplies : undefined,
+            sentCountsByChannel: useFixed && maxFixedReplies > 0 ? fixedSentByChannel : undefined,
           },
         });
-        if (useFixed && res?.replied > 0) {
-          setFixedSentCount((c) => c + res.replied);
+        if (useFixed && res?.details?.length) {
+          const successes = res.details.filter((d) => d.success);
+          if (successes.length > 0) {
+            setFixedSentByChannel((prev) => {
+              const next = { ...prev };
+              for (const d of successes) {
+                next[d.channelId] = (next[d.channelId] ?? 0) + 1;
+              }
+              return next;
+            });
+          }
         }
       } catch {}
     };
     run();
     const id = setInterval(run, 30000);
     return () => clearInterval(id);
-  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, fixedSentCount, setFixedSentCount]);
+  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, fixedSentByChannel, setFixedSentByChannel]);
 
   const handleValidateToken = async () => {
     if (!tokenInput) return;
@@ -1409,38 +1417,48 @@ export default function Home() {
                     />
                     <p className="text-[10px] text-muted-foreground mt-1.5">When set, only DMs whose last message contains one of these words/phrases (case-insensitive) will be replied to. Leave empty to reply to all pending DMs.</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Max Replies (0 = unlimited)</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={maxFixedReplies}
-                        onChange={(e) => setMaxFixedReplies(Math.max(0, parseInt(e.target.value || "0", 10)))}
-                        className="text-sm bg-input border-border rounded-xl"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Sent So Far</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          readOnly
-                          value={`${fixedSentCount}${maxFixedReplies > 0 ? ` / ${maxFixedReplies}` : ""}`}
-                          className="text-sm bg-input border-border rounded-xl font-mono"
-                        />
-                        <Button size="sm" variant="outline" className="h-9 text-xs border-border hover:border-primary/40 rounded-xl shrink-0" onClick={() => setFixedSentCount(0)}>
-                          Reset
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  {maxFixedReplies > 0 && fixedSentCount >= maxFixedReplies && (
-                    <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20 rounded-xl px-3 py-2">
-                      Reply cap reached ({fixedSentCount} / {maxFixedReplies}). Click <span className="text-foreground">Reset</span> to resume sending.
-                    </div>
-                  )}
+                  {(() => {
+                    const channelEntries = Object.entries(fixedSentByChannel);
+                    const totalSent = channelEntries.reduce((s, [, n]) => s + n, 0);
+                    const peopleReached = channelEntries.filter(([, n]) => n > 0).length;
+                    const cappedPeople = maxFixedReplies > 0 ? channelEntries.filter(([, n]) => n >= maxFixedReplies).length : 0;
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Max Replies Per Person (0 = unlimited)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={maxFixedReplies}
+                              onChange={(e) => setMaxFixedReplies(Math.max(0, parseInt(e.target.value || "0", 10)))}
+                              className="text-sm bg-input border-border rounded-xl"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Reach So Far</Label>
+                            <div className="flex gap-2">
+                              <Input
+                                readOnly
+                                value={`${totalSent} sends · ${peopleReached} people${cappedPeople > 0 ? ` · ${cappedPeople} capped` : ""}`}
+                                className="text-sm bg-input border-border rounded-xl font-mono"
+                              />
+                              <Button size="sm" variant="outline" className="h-9 text-xs border-border hover:border-primary/40 rounded-xl shrink-0" onClick={() => setFixedSentByChannel({})}>
+                                Reset
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                        {maxFixedReplies > 0 && cappedPeople > 0 && (
+                          <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20 rounded-xl px-3 py-2">
+                            {cappedPeople} {cappedPeople === 1 ? "person has" : "people have"} hit the {maxFixedReplies}-reply cap and will be skipped. Click <span className="text-foreground">Reset</span> to allow new replies to them.
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    When the message box has text, <span className="text-foreground">Auto-Reply</span> sends this exact message to every pending DM that matches the trigger keywords (or all pending DMs if no keywords are set), up to the max-replies cap.
+                    When the message box has text, <span className="text-foreground">Auto-Reply</span> sends this exact message to every pending DM that matches the trigger keywords (or all pending DMs if no keywords are set). Each individual recipient is capped by the per-person limit.
                   </p>
                 </div>
               </div>
