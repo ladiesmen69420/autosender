@@ -1339,12 +1339,6 @@ export default function Home() {
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest"><span className="flex items-center gap-1.5"><Cpu className="w-3 h-3 text-primary" />AI Persona (optional)</span></Label>
                     <Textarea placeholder="e.g. You are a friendly gamer. Keep replies casual and short..." value={aiPersona} onChange={(e) => setAiPersona(e.target.value)} className="min-h-[80px] text-sm resize-y bg-input border-border rounded-xl" />
                   </div>
-                  {aiReplyMode === "fixed" && (
-                    <div>
-                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Fixed Auto-Reply Message</Label>
-                      <Textarea placeholder="This exact message will be sent to any pending DM..." value={fixedAutoReply} onChange={(e) => setFixedAutoReply(e.target.value)} className="min-h-[80px] text-sm resize-y bg-input border-border rounded-xl" />
-                    </div>
-                  )}
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <Label className="text-sm font-medium cursor-pointer">Auto-Reply</Label>
@@ -1369,24 +1363,24 @@ export default function Home() {
                 </div>
 
                 <div className="rounded-xl border border-border bg-card/60 p-4 space-y-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5 text-primary" />Manual Reply</h3>
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Message to Reply To</Label>
-                    <Textarea placeholder="Paste the message you received..." value={aiContext} onChange={(e) => setAiContext(e.target.value)} className="min-h-[80px] text-sm resize-y bg-input border-border rounded-xl" />
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5 text-primary" />Fixed Auto-Reply</h3>
+                    <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[10px]">
+                      {aiReplyMode === "fixed" ? "Active" : "Used when mode is Fixed"}
+                    </Badge>
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Channel ID (auto-sends if set)</Label>
-                    <Input placeholder="Channel ID..." value={aiChannelId} onChange={(e) => setAiChannelId(e.target.value)} className="font-mono text-sm bg-input border-border rounded-xl" />
+                    <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Fixed Auto-Reply Message</Label>
+                    <Textarea
+                      placeholder="This exact message will be sent to any pending DM when Fixed Message mode is enabled..."
+                      value={fixedAutoReply}
+                      onChange={(e) => setFixedAutoReply(e.target.value)}
+                      className="min-h-[180px] text-sm resize-y bg-input border-border rounded-xl"
+                    />
                   </div>
-                  <Button className="w-full bg-primary/80 hover:bg-primary rounded-xl" onClick={() => handleGenerateAIReply(undefined, aiChannelId || undefined)} disabled={!aiContext || generateAIReplyMutation.isPending}>
-                    {generateAIReplyMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating...</> : <><Bot className="w-4 h-4 mr-2" />Generate Reply</>}
-                  </Button>
-                  {generatedReply && (
-                    <div className="p-3 rounded-xl border border-primary/20 bg-primary/5 text-sm leading-relaxed">
-                      <div className="text-[9px] uppercase tracking-widest text-primary mb-2">Generated Reply</div>
-                      {generatedReply}
-                    </div>
-                  )}
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    Switch <span className="text-foreground">Auto-Reply Mode</span> to <span className="text-cyan-400">Fixed Message</span> on the left, then turn on <span className="text-foreground">Auto-Reply</span> to send this message to every pending DM.
+                  </p>
                 </div>
               </div>
 

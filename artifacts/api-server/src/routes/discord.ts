@@ -12,6 +12,11 @@ import {
   RunAutoReplyBody,
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { discordHeaders } from "../lib/discord-headers";
+
+function jitter(min: number, max: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
+}
 
 const router = Router();
 
@@ -38,7 +43,7 @@ router.post("/validate-token", async (req, res) => {
 
   try {
     const response = await fetch("https://discord.com/api/v10/users/@me", {
-      headers: { Authorization: token },
+      headers: discordHeaders(token, { contentType: false }),
     });
 
     if (response.ok) {
@@ -84,10 +89,7 @@ router.post("/send-messages", async (req, res) => {
         `https://discord.com/api/v10/channels/${channelId}/messages`,
         {
           method: "POST",
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
+          headers: discordHeaders(token),
           body: JSON.stringify({ content }),
         },
       );
@@ -125,7 +127,7 @@ router.post("/dms", async (req, res) => {
   try {
     // Get the current user's ID
     const meRes = await fetch("https://discord.com/api/v10/users/@me", {
-      headers: { Authorization: token },
+      headers: discordHeaders(token, { contentType: false }),
     });
     if (!meRes.ok) {
       res.status(401).json([]);
@@ -135,7 +137,7 @@ router.post("/dms", async (req, res) => {
 
     // Get DM channels
     const channelsRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
-      headers: { Authorization: token },
+      headers: discordHeaders(token, { contentType: false }),
     });
     if (!channelsRes.ok) {
       res.status(400).json([]);
@@ -154,7 +156,7 @@ router.post("/dms", async (req, res) => {
       try {
         const msgsRes = await fetch(
           `https://discord.com/api/v10/channels/${channel.id}/messages?limit=1`,
-          { headers: { Authorization: token } },
+          { headers: discordHeaders(token, { contentType: false }) },
         );
         if (!msgsRes.ok) continue;
 
@@ -221,7 +223,7 @@ router.post("/ai-reply", async (req, res) => {
           `https://discord.com/api/v10/channels/${channelId}/messages`,
           {
             method: "POST",
-            headers: { Authorization: token, "Content-Type": "application/json" },
+            headers: discordHeaders(token),
             body: JSON.stringify({ content: reply }),
           },
         );
@@ -250,7 +252,7 @@ router.post("/auto-reply", async (req, res) => {
   try {
     // Get current user
     const meRes = await fetch("https://discord.com/api/v10/users/@me", {
-      headers: { Authorization: token },
+      headers: discordHeaders(token, { contentType: false }),
     });
     if (!meRes.ok) {
       res.status(401).json({ replied: 0, skipped: 0, details: [] });
@@ -260,7 +262,7 @@ router.post("/auto-reply", async (req, res) => {
 
     // Get DM channels
     const channelsRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
-      headers: { Authorization: token },
+      headers: discordHeaders(token, { contentType: false }),
     });
     if (!channelsRes.ok) {
       res.status(400).json({ replied: 0, skipped: 0, details: [] });
@@ -281,9 +283,10 @@ router.post("/auto-reply", async (req, res) => {
 
     for (const channel of channels.filter((c) => c.type === 1).slice(0, 10)) {
       try {
+        if (channels.indexOf(channel) > 0) await jitter(800, 2400);
         const msgsRes = await fetch(
           `https://discord.com/api/v10/channels/${channel.id}/messages?limit=1`,
-          { headers: { Authorization: token } },
+          { headers: discordHeaders(token, { contentType: false }) },
         );
         if (!msgsRes.ok) { skipped++; continue; }
 
@@ -325,7 +328,7 @@ router.post("/auto-reply", async (req, res) => {
           `https://discord.com/api/v10/channels/${channel.id}/messages`,
           {
             method: "POST",
-            headers: { Authorization: token, "Content-Type": "application/json" },
+            headers: discordHeaders(token),
             body: JSON.stringify({ content: reply }),
           },
         );

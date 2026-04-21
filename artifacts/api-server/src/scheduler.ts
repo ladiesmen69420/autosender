@@ -1,16 +1,7 @@
 import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import { logger } from "./lib/logger";
-
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
-];
+import { discordHeaders, pickStableUA } from "./lib/discord-headers";
 
 const MAX_CONSECUTIVE_FAILURES = 10;
 
@@ -18,8 +9,8 @@ const timers = new Map<number, ReturnType<typeof setTimeout>>();
 const sendCounts = new Map<number, number>();
 const nextSendTimes = new Map<number, Date>();
 
-function pickUA(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+function pickUA(token: string): string {
+  return pickStableUA(token);
 }
 
 function humanDelay(min = 400, max = 2200): Promise<void> {
@@ -83,14 +74,7 @@ export async function doSend(
 ): Promise<{ ok: boolean; status: number; retryAfterMs: number }> {
   const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: "POST",
-    headers: {
-      Authorization: token,
-      "Content-Type": "application/json",
-      "User-Agent": ua,
-      "X-Super-Properties": Buffer.from(
-        JSON.stringify({ os: "Windows", browser: "Chrome", device: "" }),
-      ).toString("base64"),
-    },
+    headers: discordHeaders(token, { ua }),
     body: JSON.stringify({ content: message }),
   });
 
@@ -130,7 +114,7 @@ async function sendCampaign(id: number): Promise<void> {
   let failed = 0;
   let rateLimited = false;
   let retryAfterMs = 0;
-  const ua = pickUA();
+  const ua = pickUA(campaign.token);
 
   for (let i = 0; i < campaign.channels.length; i++) {
     const channelId = campaign.channels[i];

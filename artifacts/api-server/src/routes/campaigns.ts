@@ -3,6 +3,7 @@ import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
 import { eq, and, gte, desc, or, isNull } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { startCampaignSchedule, stopCampaignSchedule, isRunning, getNextSendAt, doSend } from "../scheduler";
+import { pickStableUA } from "../lib/discord-headers";
 
 const router = Router();
 
@@ -20,14 +21,6 @@ function userFilter(userId: string | null) {
   return or(eq(campaignsTable.userId, userId), isNull(campaignsTable.userId));
 }
 
-function pickUA() {
-  const agents = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-  ];
-  return agents[Math.floor(Math.random() * agents.length)];
-}
 
 function parseCampaignBody(body: Record<string, unknown>) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -232,7 +225,7 @@ router.post("/:id/test-send", async (req, res) => {
     return;
   }
 
-  const ua = pickUA();
+  const ua = pickStableUA(campaign.token);
   const results: { channelId: string; success: boolean; status: number; error?: string; suggestion?: string }[] = [];
 
   for (const channelId of campaign.channels) {
