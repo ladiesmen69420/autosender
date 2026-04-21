@@ -335,7 +335,14 @@ router.post("/auto-reply", async (req, res) => {
         const lastMsg = msgs[0];
         const recipient = channel.recipients?.[0];
 
-        let reply = fixedMessage?.trim() ?? "";
+        const fixed = fixedMessage?.trim() ?? "";
+        let reply = fixed;
+        if (fixed) {
+          // Discord flags identical messages across channels as spam.
+          // Append 0-3 zero-width spaces (invisible) so each send is technically unique.
+          const zwsps = "\u200B".repeat(Math.floor(Math.random() * 3) + 1);
+          reply = fixed + zwsps;
+        }
         if (!reply) {
           const completion = await openai.chat.completions.create({
             model: "gpt-5.2",
@@ -365,8 +372,14 @@ router.post("/auto-reply", async (req, res) => {
         );
 
         const success = sendRes.ok;
-        if (success) replied++;
-        else skipped++;
+        if (success) {
+          replied++;
+        } else {
+          let errBody = "";
+          try { errBody = await sendRes.text(); } catch {}
+          req.log.warn({ channelId: channel.id, status: sendRes.status, body: errBody, replyPreview: reply.slice(0, 80) }, "Auto-reply send failed");
+          skipped++;
+        }
 
         details.push({
           username: recipient?.username ?? "Unknown",
