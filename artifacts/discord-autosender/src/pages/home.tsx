@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  useValidateToken, useGenerateAIReply, useRunAutoReply, useFetchDMs,
+  useValidateToken, useGenerateAIReply, useRunAutoReply, useFetchDMs, useSendMessages,
 } from "@workspace/api-client-react";
 import type { TokenValidationResult, DMConversation } from "@workspace/api-client-react/src/generated/api.schemas";
 import { Button } from "@/components/ui/button";
@@ -537,6 +537,7 @@ export default function Home() {
   const generateAIReplyMutation = useGenerateAIReply();
   const runAutoReplyMutation = useRunAutoReply();
   const fetchDMsMutation = useFetchDMs();
+  const sendMessagesMutation = useSendMessages();
   const { data: aiReplyCampaigns = [], isLoading: aiReplyCampaignsLoading } = useGetAiReplyCampaigns();
   const createAiReplyCampaign = useCreateAiReplyCampaign();
   const updateAiReplyCampaign = useUpdateAiReplyCampaign();
@@ -753,6 +754,27 @@ export default function Home() {
       const result = await fetchDMsMutation.mutateAsync({ data: { token: aiToken } });
       setDMs(result);
     } catch { toast({ title: "Error", description: "Could not fetch DMs. Check your token.", variant: "destructive" }); }
+  };
+
+  const handleReplyToDM = async (lastMessage: string, channelId: string) => {
+    if (!aiToken) {
+      toast({ title: "No token", description: "Enter a Discord token above.", variant: "destructive" });
+      return;
+    }
+    const fixed = fixedAutoReply.trim();
+    if (fixed) {
+      try {
+        const res = await sendMessagesMutation.mutateAsync({
+          data: { token: aiToken, channels: [channelId], message: fixed },
+        });
+        if (res.sent > 0) toast({ title: "Fixed Reply Sent" });
+        else toast({ title: "Send Failed", description: res.results?.[0]?.error ?? "Discord rejected the send.", variant: "destructive" });
+      } catch {
+        toast({ title: "Error", description: "Failed to send fixed reply.", variant: "destructive" });
+      }
+      return;
+    }
+    await handleGenerateAIReply(lastMessage, channelId);
   };
 
   const handleGenerateAIReply = async (contextOverride?: string, channelOverride?: string) => {
@@ -1394,10 +1416,10 @@ export default function Home() {
                           </div>
                           <div className="text-xs text-muted-foreground truncate">{dm.lastMessage || "(empty)"}</div>
                         </div>
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px] text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          onClick={() => { setAiContext(dm.lastMessage); setAiChannelId(dm.channelId); handleGenerateAIReply(dm.lastMessage, dm.channelId); }}
-                          disabled={dm.fromMe || generateAIReplyMutation.isPending}>
-                          <Bot className="w-3 h-3 mr-1" />AI Reply
+                        <Button size="sm" variant="ghost" className={`h-7 px-2 text-[11px] hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ${fixedAutoReply.trim() ? "text-cyan-400" : "text-primary"}`}
+                          onClick={() => { setAiContext(dm.lastMessage); setAiChannelId(dm.channelId); handleReplyToDM(dm.lastMessage, dm.channelId); }}
+                          disabled={dm.fromMe || generateAIReplyMutation.isPending || sendMessagesMutation.isPending}>
+                          <Bot className="w-3 h-3 mr-1" />{fixedAutoReply.trim() ? "Send Fixed" : "AI Reply"}
                         </Button>
                       </div>
                     ))}
