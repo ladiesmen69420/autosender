@@ -586,6 +586,7 @@ export default function Home() {
   const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
   const autoReplyRef = useRef(autoReplyEnabled);
   autoReplyRef.current = autoReplyEnabled;
+  const autoActive = autoReplyEnabled || (fixedAutoReply.trim().length > 0 && !!aiToken);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Load user settings from server once
@@ -644,10 +645,10 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (!autoReplyEnabled || !aiToken) return;
+    if (!aiToken) return;
     const useFixed = fixedAutoReply.trim().length > 0;
+    if (!autoReplyEnabled && !useFixed) return;
     const run = async () => {
-      if (!autoReplyRef.current) return;
       try {
         await runAutoReplyMutation.mutateAsync({
           data: {
@@ -659,7 +660,7 @@ export default function Home() {
       } catch {}
     };
     run();
-    const id = setInterval(run, 60000);
+    const id = setInterval(run, 30000);
     return () => clearInterval(id);
   }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply]);
 
@@ -1349,16 +1350,16 @@ export default function Home() {
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <Label className="text-sm font-medium cursor-pointer">Auto-Reply</Label>
-                      <p className="text-[10px] text-muted-foreground">Scan and reply to DMs every 60s using {fixedAutoReply.trim() ? "your fixed message" : "humanized AI"}</p>
+                      <p className="text-[10px] text-muted-foreground">{fixedAutoReply.trim() ? "Auto-on while a fixed message is set — scans every 30s" : "Scan and reply to DMs every 30s using humanized AI"}</p>
                     </div>
-                    <Switch checked={autoReplyEnabled} onCheckedChange={(v) => {
+                    <Switch checked={autoActive} disabled={!!fixedAutoReply.trim()} onCheckedChange={(v) => {
                       if (v && !aiToken) { toast({ title: "No token", description: "Enter a Discord token above.", variant: "destructive" }); return; }
                       setAutoReplyEnabled(v);
                     }} />
                   </div>
-                  {autoReplyEnabled && (
+                  {autoActive && (
                     <div className="flex items-center gap-2 text-xs text-green-400 bg-green-400/5 border border-green-400/20 rounded-xl px-3 py-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />Active — scanning every 60s
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />Active — scanning every 30s {fixedAutoReply.trim() ? "(fixed message)" : "(AI)"}
                     </div>
                   )}
                   {selectedAiReplyCampaignId && (
