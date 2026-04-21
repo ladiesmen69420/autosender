@@ -333,6 +333,14 @@ components:
         fixedMessage:
           type: string
           description: Optional exact message to send instead of generating an AI reply
+        triggerKeywords:
+          type: array
+          items:
+            type: string
+          description: If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive)
+        maxReplies:
+          type: integer
+          description: Maximum number of replies to send in this run (0 = unlimited)
       required:
         - token
 

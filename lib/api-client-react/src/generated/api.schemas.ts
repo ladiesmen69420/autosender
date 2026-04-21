@@ -76,6 +76,10 @@ export interface RunAutoReplyBody {
   persona?: string;
   /** Optional exact message to send instead of generating an AI reply */
   fixedMessage?: string;
+  /** If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive) */
+  triggerKeywords?: string[];
+  /** Maximum number of replies to send in this run (0 = unlimited) */
+  maxReplies?: number;
 }
 
 export interface AutoReplyDetail {

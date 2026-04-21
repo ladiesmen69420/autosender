@@ -108,6 +108,16 @@ export const RunAutoReplyBody = zod.object({
     .describe(
       "Optional exact message to send instead of generating an AI reply",
     ),
+  triggerKeywords: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive)",
+    ),
+  maxReplies: zod
+    .number()
+    .optional()
+    .describe("Maximum number of replies to send in this run (0 = unlimited)"),
 });
 
 export const RunAutoReplyResponse = zod.object({

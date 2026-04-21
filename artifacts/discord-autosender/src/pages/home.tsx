@@ -582,6 +582,9 @@ export default function Home() {
   const [selectedAiReplyCampaignId, setSelectedAiReplyCampaignId] = useLocalState<number | null>("bb_ai_campaign_id", null);
   const [, setAiReplyMode] = useLocalState<"ai" | "fixed">("bb_ai_reply_mode", "ai");
   const [fixedAutoReply, setFixedAutoReply] = useLocalState("bb_fixed_auto_reply", "");
+  const [triggerKeywordsInput, setTriggerKeywordsInput] = useLocalState("bb_trigger_keywords", "");
+  const [maxFixedReplies, setMaxFixedReplies] = useLocalState<number>("bb_max_fixed_replies", 0);
+  const [fixedSentCount, setFixedSentCount] = useLocalState<number>("bb_fixed_sent_count", 0);
   const [dms, setDMs] = useState<DMConversation[]>([]);
   const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
   const autoReplyRef = useRef(autoReplyEnabled);
@@ -648,21 +651,32 @@ export default function Home() {
     if (!aiToken) return;
     const useFixed = fixedAutoReply.trim().length > 0;
     if (!autoReplyEnabled && !useFixed) return;
+    const triggers = triggerKeywordsInput
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
     const run = async () => {
+      const remaining = useFixed && maxFixedReplies > 0 ? maxFixedReplies - fixedSentCount : 0;
+      if (useFixed && maxFixedReplies > 0 && remaining <= 0) return;
       try {
-        await runAutoReplyMutation.mutateAsync({
+        const res = await runAutoReplyMutation.mutateAsync({
           data: {
             token: aiToken,
             persona: useFixed ? undefined : (aiPersona || undefined),
             fixedMessage: useFixed ? fixedAutoReply : undefined,
+            triggerKeywords: triggers.length > 0 ? triggers : undefined,
+            maxReplies: useFixed && maxFixedReplies > 0 ? remaining : undefined,
           },
         });
+        if (useFixed && res?.replied > 0) {
+          setFixedSentCount((c) => c + res.replied);
+        }
       } catch {}
     };
     run();
     const id = setInterval(run, 30000);
     return () => clearInterval(id);
-  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply]);
+  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, fixedSentCount, setFixedSentCount]);
 
   const handleValidateToken = async () => {
     if (!tokenInput) return;
@@ -1385,8 +1399,48 @@ export default function Home() {
                       className="min-h-[180px] text-sm resize-y bg-input border-border rounded-xl"
                     />
                   </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Trigger Keywords (comma-separated, optional)</Label>
+                    <Input
+                      placeholder="e.g. hello, price, buy, help"
+                      value={triggerKeywordsInput}
+                      onChange={(e) => setTriggerKeywordsInput(e.target.value)}
+                      className="text-sm bg-input border-border rounded-xl"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1.5">When set, only DMs whose last message contains one of these words/phrases (case-insensitive) will be replied to. Leave empty to reply to all pending DMs.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Max Replies (0 = unlimited)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={maxFixedReplies}
+                        onChange={(e) => setMaxFixedReplies(Math.max(0, parseInt(e.target.value || "0", 10)))}
+                        className="text-sm bg-input border-border rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Sent So Far</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          readOnly
+                          value={`${fixedSentCount}${maxFixedReplies > 0 ? ` / ${maxFixedReplies}` : ""}`}
+                          className="text-sm bg-input border-border rounded-xl font-mono"
+                        />
+                        <Button size="sm" variant="outline" className="h-9 text-xs border-border hover:border-primary/40 rounded-xl shrink-0" onClick={() => setFixedSentCount(0)}>
+                          Reset
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  {maxFixedReplies > 0 && fixedSentCount >= maxFixedReplies && (
+                    <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-400/5 border border-amber-400/20 rounded-xl px-3 py-2">
+                      Reply cap reached ({fixedSentCount} / {maxFixedReplies}). Click <span className="text-foreground">Reset</span> to resume sending.
+                    </div>
+                  )}
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    When this box has text, <span className="text-foreground">Auto-Reply</span> sends this exact message to every pending DM. Leave it empty to fall back to humanized AI replies.
+                    When the message box has text, <span className="text-foreground">Auto-Reply</span> sends this exact message to every pending DM that matches the trigger keywords (or all pending DMs if no keywords are set), up to the max-replies cap.
                   </p>
                 </div>
               </div>

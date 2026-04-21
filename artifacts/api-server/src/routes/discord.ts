@@ -276,7 +276,11 @@ router.post("/auto-reply", async (req, res) => {
     return;
   }
 
-  const { token, persona, fixedMessage } = parsed.data;
+  const { token, persona, fixedMessage, triggerKeywords, maxReplies } = parsed.data;
+  const triggers = (triggerKeywords ?? [])
+    .map((k) => k.trim().toLowerCase())
+    .filter((k) => k.length > 0);
+  const replyCap = typeof maxReplies === "number" && maxReplies > 0 ? maxReplies : Infinity;
 
   try {
     // Get current user
@@ -313,6 +317,7 @@ router.post("/auto-reply", async (req, res) => {
     let skipped = 0;
 
     for (const channel of channels.slice(0, 15)) {
+      if (replied >= replyCap) break;
       try {
         if (channels.indexOf(channel) > 0) await jitter(800, 2400);
         const msgsRes = await fetch(
@@ -333,6 +338,16 @@ router.post("/auto-reply", async (req, res) => {
         }
 
         const lastMsg = msgs[0];
+
+        // Trigger keyword filter
+        if (triggers.length > 0) {
+          const haystack = (lastMsg.content ?? "").toLowerCase();
+          const matched = triggers.some((kw) => haystack.includes(kw));
+          if (!matched) {
+            skipped++;
+            continue;
+          }
+        }
         const recipient = channel.recipients?.[0];
 
         const fixed = fixedMessage?.trim() ?? "";
