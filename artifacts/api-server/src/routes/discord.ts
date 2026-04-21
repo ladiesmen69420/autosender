@@ -18,6 +18,27 @@ function jitter(min: number, max: number): Promise<void> {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
 }
 
+type DiscordChannel = {
+  id: string;
+  type: number;
+  recipients?: Array<{ id: string; username: string; avatar: string | null }>;
+};
+
+async function fetchMessageRequests(token: string): Promise<DiscordChannel[]> {
+  // Discord exposes pending message requests at this endpoint for user accounts.
+  // It may 404 on accounts without the feature; treat any failure as an empty list.
+  try {
+    const r = await fetch("https://discord.com/api/v10/users/@me/message-requests", {
+      headers: discordHeaders(token, { contentType: false }),
+    });
+    if (!r.ok) return [];
+    const data = (await r.json()) as DiscordChannel[];
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 const router = Router();
 
 function makeHumanizedPrompt(persona?: string): string {
@@ -135,7 +156,7 @@ router.post("/dms", async (req, res) => {
     }
     const me = (await meRes.json()) as { id: string };
 
-    // Get DM channels
+    // Get DM channels (open conversations)
     const channelsRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
       headers: discordHeaders(token, { contentType: false }),
     });
@@ -150,9 +171,17 @@ router.post("/dms", async (req, res) => {
       recipients?: Array<{ id: string; username: string; avatar: string | null }>;
     }>;
 
+    // Also fetch pending message requests (DMs from non-friends you haven't accepted)
+    const requestChannels = await fetchMessageRequests(token);
+    const seen = new Set(channels.map((c) => c.id));
+    const allChannels = [
+      ...channels.filter((c) => c.type === 1),
+      ...requestChannels.filter((c) => c.type === 1 && !seen.has(c.id)),
+    ];
+
     const dms = [];
 
-    for (const channel of channels.filter((c) => c.type === 1).slice(0, 20)) {
+    for (const channel of allChannels.slice(0, 30)) {
       try {
         const msgsRes = await fetch(
           `https://discord.com/api/v10/channels/${channel.id}/messages?limit=1`,
@@ -269,11 +298,13 @@ router.post("/auto-reply", async (req, res) => {
       return;
     }
 
-    const channels = (await channelsRes.json()) as Array<{
-      id: string;
-      type: number;
-      recipients?: Array<{ id: string; username: string; avatar: string | null }>;
-    }>;
+    const openChannels = (await channelsRes.json()) as DiscordChannel[];
+    const requestChannels = await fetchMessageRequests(token);
+    const seenIds = new Set(openChannels.map((c) => c.id));
+    const channels: DiscordChannel[] = [
+      ...openChannels.filter((c) => c.type === 1),
+      ...requestChannels.filter((c) => c.type === 1 && !seenIds.has(c.id)),
+    ];
 
     const systemPrompt = makeHumanizedPrompt(persona);
 
@@ -281,7 +312,7 @@ router.post("/auto-reply", async (req, res) => {
     let replied = 0;
     let skipped = 0;
 
-    for (const channel of channels.filter((c) => c.type === 1).slice(0, 10)) {
+    for (const channel of channels.slice(0, 15)) {
       try {
         if (channels.indexOf(channel) > 0) await jitter(800, 2400);
         const msgsRes = await fetch(
