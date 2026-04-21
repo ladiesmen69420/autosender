@@ -579,7 +579,7 @@ export default function Home() {
   const [generatedReply, setGeneratedReply] = useLocalState("bb_ai_reply", "");
   const [aiReplyCampaignName, setAiReplyCampaignName] = useLocalState("bb_ai_campaign_name", "DM Reply Campaign");
   const [selectedAiReplyCampaignId, setSelectedAiReplyCampaignId] = useLocalState<number | null>("bb_ai_campaign_id", null);
-  const [aiReplyMode, setAiReplyMode] = useLocalState<"ai" | "fixed">("bb_ai_reply_mode", "ai");
+  const [, setAiReplyMode] = useLocalState<"ai" | "fixed">("bb_ai_reply_mode", "ai");
   const [fixedAutoReply, setFixedAutoReply] = useLocalState("bb_fixed_auto_reply", "");
   const [dms, setDMs] = useState<DMConversation[]>([]);
   const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
@@ -644,15 +644,15 @@ export default function Home() {
 
   useEffect(() => {
     if (!autoReplyEnabled || !aiToken) return;
-    if (aiReplyMode === "fixed" && !fixedAutoReply.trim()) return;
+    const useFixed = fixedAutoReply.trim().length > 0;
     const run = async () => {
       if (!autoReplyRef.current) return;
       try {
         await runAutoReplyMutation.mutateAsync({
           data: {
             token: aiToken,
-            persona: aiReplyMode === "ai" ? aiPersona || undefined : undefined,
-            fixedMessage: aiReplyMode === "fixed" ? fixedAutoReply : undefined,
+            persona: useFixed ? undefined : (aiPersona || undefined),
+            fixedMessage: useFixed ? fixedAutoReply : undefined,
           },
         });
       } catch {}
@@ -660,7 +660,7 @@ export default function Home() {
     run();
     const id = setInterval(run, 60000);
     return () => clearInterval(id);
-  }, [autoReplyEnabled, aiToken, aiPersona, aiReplyMode, fixedAutoReply]);
+  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply]);
 
   const handleValidateToken = async () => {
     if (!tokenInput) return;
@@ -788,12 +788,8 @@ export default function Home() {
       toast({ title: "No token", description: "Enter a Discord token before saving.", variant: "destructive" });
       return;
     }
-    if (aiReplyMode === "fixed" && !fixedAutoReply.trim()) {
-      toast({ title: "No fixed message", description: "Enter the message to auto-send in fixed mode.", variant: "destructive" });
-      return;
-    }
-
-    const data = { name, token: aiToken, persona: aiPersona, mode: aiReplyMode, fixedMessage: fixedAutoReply };
+    const mode: "ai" | "fixed" = fixedAutoReply.trim() ? "fixed" : "ai";
+    const data = { name, token: aiToken, persona: aiPersona, mode, fixedMessage: fixedAutoReply };
     try {
       if (selectedAiReplyCampaignId) {
         await updateAiReplyCampaign.mutateAsync({ id: selectedAiReplyCampaignId, ...data });
@@ -1277,8 +1273,8 @@ export default function Home() {
                 <div className="rounded-xl border border-border bg-card/60 p-4 space-y-4">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Key className="w-3.5 h-3.5 text-primary" />AI Reply Campaign</h3>
-                    <Badge className={`${aiReplyMode === "fixed" ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" : "bg-primary/10 text-primary border-primary/20"} text-[10px]`}>
-                      {aiReplyMode === "fixed" ? "Fixed Message" : "Humanized AI"}
+                    <Badge className={`${fixedAutoReply.trim() ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" : "bg-primary/10 text-primary border-primary/20"} text-[10px]`}>
+                      {fixedAutoReply.trim() ? "Fixed Message" : "Humanized AI"}
                     </Badge>
                   </div>
                   {saveUserSettings.isPending && (
@@ -1314,7 +1310,7 @@ export default function Home() {
                             <span className="text-[9px] uppercase tracking-widest text-muted-foreground">{campaign.mode}</span>
                           </div>
                           <div className="text-[10px] text-muted-foreground truncate mt-0.5">
-                            {campaign.mode === "fixed" ? campaign.fixedMessage || "Fixed message" : campaign.persona || "Default humanized AI"}
+                            {campaign.fixedMessage?.trim() ? campaign.fixedMessage : campaign.persona || "Default humanized AI"}
                           </div>
                         </button>
                       ))
@@ -1325,28 +1321,16 @@ export default function Home() {
                     <Input type="password" placeholder="Enter token to fetch DMs and auto-reply..." value={aiToken} onChange={(e) => setAiToken(e.target.value)} className="font-mono text-sm bg-input border-border rounded-xl" />
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Auto-Reply Mode</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => setAiReplyMode("ai")} className={`rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${aiReplyMode === "ai" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                        Humanized AI
-                      </button>
-                      <button onClick={() => setAiReplyMode("fixed")} className={`rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${aiReplyMode === "fixed" ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-400" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                        Fixed Message
-                      </button>
-                    </div>
-                  </div>
-                  <div>
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest"><span className="flex items-center gap-1.5"><Cpu className="w-3 h-3 text-primary" />AI Persona (optional)</span></Label>
                     <Textarea placeholder="e.g. You are a friendly gamer. Keep replies casual and short..." value={aiPersona} onChange={(e) => setAiPersona(e.target.value)} className="min-h-[80px] text-sm resize-y bg-input border-border rounded-xl" />
                   </div>
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <Label className="text-sm font-medium cursor-pointer">Auto-Reply</Label>
-                      <p className="text-[10px] text-muted-foreground">Scan and reply to DMs every 60s using {aiReplyMode === "fixed" ? "your fixed message" : "humanized AI"}</p>
+                      <p className="text-[10px] text-muted-foreground">Scan and reply to DMs every 60s using {fixedAutoReply.trim() ? "your fixed message" : "humanized AI"}</p>
                     </div>
                     <Switch checked={autoReplyEnabled} onCheckedChange={(v) => {
                       if (v && !aiToken) { toast({ title: "No token", description: "Enter a Discord token above.", variant: "destructive" }); return; }
-                      if (v && aiReplyMode === "fixed" && !fixedAutoReply.trim()) { toast({ title: "No fixed message", description: "Enter a fixed auto-reply message first.", variant: "destructive" }); return; }
                       setAutoReplyEnabled(v);
                     }} />
                   </div>
@@ -1365,21 +1349,21 @@ export default function Home() {
                 <div className="rounded-xl border border-border bg-card/60 p-4 space-y-4">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5 text-primary" />Fixed Auto-Reply</h3>
-                    <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[10px]">
-                      {aiReplyMode === "fixed" ? "Active" : "Used when mode is Fixed"}
+                    <Badge className={`${fixedAutoReply.trim() ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" : "bg-secondary/40 text-muted-foreground border-border"} text-[10px]`}>
+                      {fixedAutoReply.trim() ? "Active" : "Empty — using AI"}
                     </Badge>
                   </div>
                   <div>
                     <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Fixed Auto-Reply Message</Label>
                     <Textarea
-                      placeholder="This exact message will be sent to any pending DM when Fixed Message mode is enabled..."
+                      placeholder="Type a message to send to every pending DM. Leave empty to use humanized AI replies instead."
                       value={fixedAutoReply}
                       onChange={(e) => setFixedAutoReply(e.target.value)}
                       className="min-h-[180px] text-sm resize-y bg-input border-border rounded-xl"
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    Switch <span className="text-foreground">Auto-Reply Mode</span> to <span className="text-cyan-400">Fixed Message</span> on the left, then turn on <span className="text-foreground">Auto-Reply</span> to send this message to every pending DM.
+                    When this box has text, <span className="text-foreground">Auto-Reply</span> sends this exact message to every pending DM. Leave it empty to fall back to humanized AI replies.
                   </p>
                 </div>
               </div>
