@@ -3,7 +3,7 @@ import { eq, and, gte } from "drizzle-orm";
 import { logger } from "./lib/logger";
 import { discordHeaders, pickStableUA } from "./lib/discord-headers";
 
-const MAX_CONSECUTIVE_FAILURES = 10;
+const MAX_CONSECUTIVE_FAILURES = 5;
 
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 const sendCounts = new Map<number, number>();
