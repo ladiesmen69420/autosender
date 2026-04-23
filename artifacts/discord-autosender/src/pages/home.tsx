@@ -585,6 +585,9 @@ export default function Home() {
   const [triggerKeywordsInput, setTriggerKeywordsInput] = useLocalState("bb_trigger_keywords", "");
   const [maxFixedReplies, setMaxFixedReplies] = useLocalState<number>("bb_max_fixed_replies", 0);
   const [fixedSentByChannel, setFixedSentByChannel] = useLocalState<Record<string, number>>("bb_fixed_sent_by_channel", {});
+  const [stealthMaxPerCycle, setStealthMaxPerCycle] = useLocalState<number>("bb_stealth_max_per_cycle", 2);
+  const [stealthActiveHoursStart, setStealthActiveHoursStart] = useLocalState<number>("bb_stealth_hours_start", 9);
+  const [stealthActiveHoursEnd, setStealthActiveHoursEnd] = useLocalState<number>("bb_stealth_hours_end", 23);
   const [dms, setDMs] = useState<DMConversation[]>([]);
   const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
   const autoReplyRef = useRef(autoReplyEnabled);
@@ -655,7 +658,22 @@ export default function Home() {
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const isActiveHour = () => {
+      const h = new Date().getHours();
+      const start = stealthActiveHoursStart;
+      const end = stealthActiveHoursEnd;
+      if (start === end) return true; // disabled / always on
+      if (start < end) return h >= start && h < end;
+      // overnight window (e.g. 22 → 6)
+      return h >= start || h < end;
+    };
+
     const run = async () => {
+      if (cancelled) return;
+      if (!isActiveHour()) return;
       try {
         const res = await runAutoReplyMutation.mutateAsync({
           data: {
@@ -665,6 +683,7 @@ export default function Home() {
             triggerKeywords: triggers.length > 0 ? triggers : undefined,
             maxRepliesPerUser: useFixed && maxFixedReplies > 0 ? maxFixedReplies : undefined,
             sentCountsByChannel: useFixed && maxFixedReplies > 0 ? fixedSentByChannel : undefined,
+            maxRepliesPerCycle: stealthMaxPerCycle > 0 ? stealthMaxPerCycle : undefined,
           },
         });
         if (useFixed && res?.details?.length) {
@@ -681,10 +700,27 @@ export default function Home() {
         }
       } catch {}
     };
+
+    const schedule = () => {
+      if (cancelled) return;
+      // Randomized interval 75–180s with occasional 4–8 minute "human idle" gaps
+      const longBreak = Math.random() < 0.15;
+      const delay = longBreak
+        ? 240000 + Math.random() * 240000
+        : 75000 + Math.random() * 105000;
+      timer = setTimeout(async () => {
+        await run();
+        schedule();
+      }, delay);
+    };
+
     run();
-    const id = setInterval(run, 30000);
-    return () => clearInterval(id);
-  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, fixedSentByChannel, setFixedSentByChannel]);
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, fixedSentByChannel, setFixedSentByChannel, stealthMaxPerCycle, stealthActiveHoursStart, stealthActiveHoursEnd]);
 
   const handleValidateToken = async () => {
     if (!tokenInput) return;
@@ -1372,7 +1408,7 @@ export default function Home() {
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <Label className="text-sm font-medium cursor-pointer">Auto-Reply</Label>
-                      <p className="text-[10px] text-muted-foreground">{fixedAutoReply.trim() ? "Auto-on while a fixed message is set — scans every 30s" : "Scan and reply to DMs every 30s using humanized AI"}</p>
+                      <p className="text-[10px] text-muted-foreground">{fixedAutoReply.trim() ? "Auto-on while a fixed message is set — humanized scans (~1–3 min, with idle gaps)" : "Scan and reply to DMs with humanized AI on a randomized 1–3 min cycle"}</p>
                     </div>
                     <Switch checked={autoActive} disabled={!!fixedAutoReply.trim()} onCheckedChange={(v) => {
                       if (v && !aiToken) { toast({ title: "No token", description: "Enter a Discord token above.", variant: "destructive" }); return; }
@@ -1381,7 +1417,7 @@ export default function Home() {
                   </div>
                   {autoActive && (
                     <div className="flex items-center gap-2 text-xs text-green-400 bg-green-400/5 border border-green-400/20 rounded-xl px-3 py-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />Active — scanning every 30s {fixedAutoReply.trim() ? "(fixed message)" : "(AI)"}
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />Active — humanized scans {fixedAutoReply.trim() ? "(fixed message)" : "(AI)"}
                     </div>
                   )}
                   {selectedAiReplyCampaignId && (
@@ -1457,8 +1493,52 @@ export default function Home() {
                       </>
                     );
                   })()}
+                  <div className="rounded-xl border border-border bg-background/40 p-3 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                      <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Stealth Settings</Label>
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Max Replies Per Scan (anti-burst)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={stealthMaxPerCycle}
+                        onChange={(e) => setStealthMaxPerCycle(Math.max(0, parseInt(e.target.value || "0", 10)))}
+                        className="text-sm bg-input border-border rounded-xl"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1.5">Hard cap on actual sends per scan run. Lower is safer (recommended: 1–3). 0 = unlimited.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Active From (hour)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={stealthActiveHoursStart}
+                          onChange={(e) => setStealthActiveHoursStart(Math.min(23, Math.max(0, parseInt(e.target.value || "0", 10))))}
+                          className="text-sm bg-input border-border rounded-xl"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Active Until (hour)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={stealthActiveHoursEnd}
+                          onChange={(e) => setStealthActiveHoursEnd(Math.min(23, Math.max(0, parseInt(e.target.value || "0", 10))))}
+                          className="text-sm bg-input border-border rounded-xl"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Scanning only runs between these hours in your local timezone (overnight windows like 22→6 are supported). Set both to the same value to run 24/7.
+                    </p>
+                  </div>
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    When the message box has text, <span className="text-foreground">Auto-Reply</span> sends this exact message to every pending DM that matches the trigger keywords (or all pending DMs if no keywords are set). Each individual recipient is capped by the per-person limit.
+                    Auto-Reply mimics the official Discord client: it marks DMs as read, shows the typing indicator, waits a humanized delay scaled to message length, then sends. Identical messages are silently varied with invisible characters to bypass spam detection.
                   </p>
                 </div>
               </div>

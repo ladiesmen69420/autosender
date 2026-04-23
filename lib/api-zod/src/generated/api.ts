@@ -126,6 +126,12 @@ export const RunAutoReplyBody = zod.object({
     .describe(
       "Map of channelId → how many fixed replies have already been sent to that channel; channels at or above the per-user cap will be skipped",
     ),
+  maxRepliesPerCycle: zod
+    .number()
+    .optional()
+    .describe(
+      "Maximum number of DMs to actually reply to in a single scan run (anti-burst). 0 = unlimited.",
+    ),
 });
 
 export const RunAutoReplyResponse = zod.object({

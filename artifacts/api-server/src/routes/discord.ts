@@ -18,6 +18,80 @@ function jitter(min: number, max: number): Promise<void> {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
 }
 
+// Send the typing indicator the way the official Discord client does before a
+// human starts composing a reply. Official client refreshes typing every ~9s
+// while the textbox is focused; we mirror this.
+async function sendTyping(token: string, channelId: string): Promise<void> {
+  try {
+    await fetch(`https://discord.com/api/v10/channels/${channelId}/typing`, {
+      method: "POST",
+      headers: discordHeaders(token),
+    });
+  } catch {
+    // typing failures are non-fatal
+  }
+}
+
+// Mark the latest message as read — the official client always does this when
+// the conversation has the focus before composing a reply. Skipping it is a
+// strong "this is a selfbot" signal.
+async function ackMessage(token: string, channelId: string, messageId: string): Promise<void> {
+  try {
+    await fetch(
+      `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}/ack`,
+      {
+        method: "POST",
+        headers: discordHeaders(token),
+        body: JSON.stringify({ token: null, manual: false }),
+      },
+    );
+  } catch {
+    // ack failures are non-fatal
+  }
+}
+
+// Simulate a human composing time scaled to the message length:
+//   ~45-90ms per character of "thinking + typing" + a 1.2-3s "saw it" pause.
+// While the human is "typing", refresh the typing indicator every 8s
+// (Discord's typing TTL is 10s). Capped at 35s so we never block forever.
+async function humanComposeDelay(token: string, channelId: string, replyText: string): Promise<void> {
+  const lookPause = 1200 + Math.random() * 1800;
+  await new Promise((r) => setTimeout(r, lookPause));
+
+  await sendTyping(token, channelId);
+
+  const perChar = 45 + Math.random() * 45;
+  const typingMs = Math.min(35000, replyText.length * perChar + 800 + Math.random() * 1500);
+
+  let elapsed = 0;
+  const REFRESH = 8000;
+  while (elapsed < typingMs) {
+    const slice = Math.min(REFRESH, typingMs - elapsed);
+    await new Promise((r) => setTimeout(r, slice));
+    elapsed += slice;
+    if (elapsed < typingMs) await sendTyping(token, channelId);
+  }
+}
+
+// Build a per-send invisible-character salt that varies in both content and
+// position. Discord's spam detection compares normalized message bodies across
+// recent sends; rotating the variant defeats simple equality + edit-distance
+// hashes without changing what the recipient sees.
+function obfuscateFixed(message: string): string {
+  const ZW_CHARS = ["\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF"];
+  const count = 1 + Math.floor(Math.random() * 4);
+  let salt = "";
+  for (let i = 0; i < count; i++) {
+    salt += ZW_CHARS[Math.floor(Math.random() * ZW_CHARS.length)];
+  }
+  // Splice the salt either at the end (most common) or just before the last word.
+  if (Math.random() < 0.25 && message.includes(" ")) {
+    const idx = message.lastIndexOf(" ");
+    return message.slice(0, idx) + salt + message.slice(idx);
+  }
+  return message + salt;
+}
+
 type DiscordChannel = {
   id: string;
   type: number;
@@ -276,12 +350,13 @@ router.post("/auto-reply", async (req, res) => {
     return;
   }
 
-  const { token, persona, fixedMessage, triggerKeywords, maxRepliesPerUser, sentCountsByChannel } = parsed.data;
+  const { token, persona, fixedMessage, triggerKeywords, maxRepliesPerUser, sentCountsByChannel, maxRepliesPerCycle } = parsed.data;
   const triggers = (triggerKeywords ?? [])
     .map((k) => k.trim().toLowerCase())
     .filter((k) => k.length > 0);
   const perUserCap = typeof maxRepliesPerUser === "number" && maxRepliesPerUser > 0 ? maxRepliesPerUser : Infinity;
   const sentCounts: Record<string, number> = sentCountsByChannel ?? {};
+  const cycleCap = typeof maxRepliesPerCycle === "number" && maxRepliesPerCycle > 0 ? maxRepliesPerCycle : Infinity;
 
   try {
     // Get current user
@@ -317,14 +392,21 @@ router.post("/auto-reply", async (req, res) => {
     let replied = 0;
     let skipped = 0;
 
-    for (const channel of channels.slice(0, 15)) {
+    // Process channels in random order to avoid mechanical "always top first" patterns
+    const ordered = [...channels.slice(0, 15)].sort(() => Math.random() - 0.5);
+
+    for (const channel of ordered) {
+      if (replied >= cycleCap) break;
+
       // Per-recipient cap: skip channels that have already received the max fixed replies
       if ((sentCounts[channel.id] ?? 0) >= perUserCap) {
         skipped++;
         continue;
       }
       try {
-        if (channels.indexOf(channel) > 0) await jitter(800, 2400);
+        // Random gap between checking conversations (mimics scrolling through DMs)
+        if (ordered.indexOf(channel) > 0) await jitter(1500, 4500);
+
         const msgsRes = await fetch(
           `https://discord.com/api/v10/channels/${channel.id}/messages?limit=1`,
           { headers: discordHeaders(token, { contentType: false }) },
@@ -356,13 +438,7 @@ router.post("/auto-reply", async (req, res) => {
         const recipient = channel.recipients?.[0];
 
         const fixed = fixedMessage?.trim() ?? "";
-        let reply = fixed;
-        if (fixed) {
-          // Discord flags identical messages across channels as spam.
-          // Append 0-3 zero-width spaces (invisible) so each send is technically unique.
-          const zwsps = "\u200B".repeat(Math.floor(Math.random() * 3) + 1);
-          reply = fixed + zwsps;
-        }
+        let reply = fixed ? obfuscateFixed(fixed) : "";
         if (!reply) {
           const completion = await openai.chat.completions.create({
             model: "gpt-5.2",
@@ -380,6 +456,12 @@ router.post("/auto-reply", async (req, res) => {
           skipped++;
           continue;
         }
+
+        // Mimic the official client: mark the incoming message as read,
+        // pause as if the user just opened the chat, then show typing for a
+        // duration proportional to the reply length.
+        await ackMessage(token, channel.id, lastMsg.id);
+        await humanComposeDelay(token, channel.id, reply);
 
         // Send the reply
         const sendRes = await fetch(

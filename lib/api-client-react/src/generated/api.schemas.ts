@@ -87,6 +87,8 @@ export interface RunAutoReplyBody {
   maxRepliesPerUser?: number;
   /** Map of channelId → how many fixed replies have already been sent to that channel; channels at or above the per-user cap will be skipped */
   sentCountsByChannel?: RunAutoReplyBodySentCountsByChannel;
+  /** Maximum number of DMs to actually reply to in a single scan run (anti-burst). 0 = unlimited. */
+  maxRepliesPerCycle?: number;
 }
 
 export interface AutoReplyDetail {
