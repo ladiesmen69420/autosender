@@ -124,6 +124,120 @@ paths:
               schema:
                 $ref: "#/components/schemas/RunAutoReplyResult"
 
+  /discord/presence/start:
+    post:
+      operationId: startPresence
+      tags: [discord]
+      summary: Open a Discord gateway connection so the account appears online
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceStartBody"
+      responses:
+        "200":
+          description: Presence status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceStatus"
+
+  /discord/presence/stop:
+    post:
+      operationId: stopPresence
+      tags: [discord]
+      summary: Close the Discord gateway connection (account goes offline)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceStopBody"
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceStatus"
+
+  /discord/presence/status:
+    post:
+      operationId: getPresenceStatus
+      tags: [discord]
+      summary: Get current presence connection status for a token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceStopBody"
+      responses:
+        "200":
+          description: Presence status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresenceStatus"
+
+  /discord/warmup/start:
+    post:
+      operationId: startWarmup
+      tags: [discord]
+      summary: Begin a multi-day passive warm-up of read-only activity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WarmupStartBody"
+      responses:
+        "200":
+          description: Warm-up status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarmupStatus"
+
+  /discord/warmup/stop:
+    post:
+      operationId: stopWarmup
+      tags: [discord]
+      summary: Cancel an in-progress warm-up
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceStopBody"
+      responses:
+        "200":
+          description: Warm-up status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarmupStatus"
+
+  /discord/warmup/status:
+    post:
+      operationId: getWarmupStatus
+      tags: [discord]
+      summary: Get current warm-up state for a token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceStopBody"
+      responses:
+        "200":
+          description: Warm-up status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarmupStatus"
+
   /discord/sessions:
     get:
       operationId: listSessions
@@ -333,6 +447,11 @@ components:
         fixedMessage:
           type: string
           description: Optional exact message to send instead of generating an AI reply
+        fixedMessageVariants:
+          type: array
+          items:
+            type: string
+          description: Optional list of message variants. When non-empty, one is picked at random per send (rotation) instead of using fixedMessage.
         triggerKeywords:
           type: array
           items:
@@ -367,6 +486,80 @@ components:
         - replied
         - skipped
         - details
+
+    PresenceStartBody:
+      type: object
+      properties:
+        token:
+          type: string
+        status:
+          type: string
+          description: Discord presence status (online | idle | dnd | invisible)
+      required:
+        - token
+
+    PresenceStopBody:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+
+    PresenceStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        status:
+          type: string
+          nullable: true
+        uptimeMs:
+          type: integer
+        sessionId:
+          type: string
+          nullable: true
+      required:
+        - connected
+        - uptimeMs
+
+    WarmupStartBody:
+      type: object
+      properties:
+        token:
+          type: string
+        days:
+          type: number
+          description: Length of the warmup window in days (e.g. 3)
+      required:
+        - token
+        - days
+
+    WarmupStatus:
+      type: object
+      properties:
+        active:
+          type: boolean
+        startedAt:
+          type: integer
+        endsAt:
+          type: integer
+        remainingMs:
+          type: integer
+        ticksDone:
+          type: integer
+        channelsBrowsed:
+          type: integer
+        guildsOpened:
+          type: integer
+        messagesRead:
+          type: integer
+        lastTickAt:
+          type: integer
+      required:
+        - active
+        - remainingMs
+        - ticksDone
 
     AutoReplyDetail:
       type: object

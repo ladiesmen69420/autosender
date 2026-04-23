@@ -13,6 +13,8 @@ export interface RunAutoReplyBody {
   persona?: string;
   /** Optional exact message to send instead of generating an AI reply */
   fixedMessage?: string;
+  /** Optional list of message variants. When non-empty, one is picked at random per send (rotation) instead of using fixedMessage. */
+  fixedMessageVariants?: string[];
   /** If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive) */
   triggerKeywords?: string[];
   /** Maximum number of fixed-message replies allowed per recipient/channel (0 = unlimited) */

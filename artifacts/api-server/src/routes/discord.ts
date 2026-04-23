@@ -14,6 +14,8 @@ import {
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { discordHeaders } from "../lib/discord-headers";
 import { discordFetch } from "../lib/discord-fetch";
+import { startPresence, stopPresence, presenceStatus } from "../lib/discord-gateway";
+import { startWarmup, stopWarmup, getWarmupState, isWarmupActive } from "../lib/discord-warmup";
 
 function jitter(min: number, max: number): Promise<void> {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));

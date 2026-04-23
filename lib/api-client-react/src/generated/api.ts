@@ -24,6 +24,9 @@ import type {
   GenerateAIReplyBody,
   GenerateAIReplyResult,
   HealthStatus,
+  PresenceStartBody,
+  PresenceStatus,
+  PresenceStopBody,
   RunAutoReplyBody,
   RunAutoReplyResult,
   SendMessagesBody,
@@ -31,6 +34,8 @@ import type {
   Session,
   TokenValidationResult,
   ValidateTokenBody,
+  WarmupStartBody,
+  WarmupStatus,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -546,6 +551,522 @@ export const useRunAutoReply = <
   TContext
 > => {
   return useMutation(getRunAutoReplyMutationOptions(options));
+};
+
+/**
+ * @summary Open a Discord gateway connection so the account appears online
+ */
+export const getStartPresenceUrl = () => {
+  return `/api/discord/presence/start`;
+};
+
+export const startPresence = async (
+  presenceStartBody: PresenceStartBody,
+  options?: RequestInit,
+): Promise<PresenceStatus> => {
+  return customFetch<PresenceStatus>(getStartPresenceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(presenceStartBody),
+  });
+};
+
+export const getStartPresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startPresence>>,
+    TError,
+    { data: BodyType<PresenceStartBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startPresence>>,
+  TError,
+  { data: BodyType<PresenceStartBody> },
+  TContext
+> => {
+  const mutationKey = ["startPresence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startPresence>>,
+    { data: BodyType<PresenceStartBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return startPresence(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartPresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startPresence>>
+>;
+export type StartPresenceMutationBody = BodyType<PresenceStartBody>;
+export type StartPresenceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Open a Discord gateway connection so the account appears online
+ */
+export const useStartPresence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startPresence>>,
+    TError,
+    { data: BodyType<PresenceStartBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startPresence>>,
+  TError,
+  { data: BodyType<PresenceStartBody> },
+  TContext
+> => {
+  return useMutation(getStartPresenceMutationOptions(options));
+};
+
+/**
+ * @summary Close the Discord gateway connection (account goes offline)
+ */
+export const getStopPresenceUrl = () => {
+  return `/api/discord/presence/stop`;
+};
+
+export const stopPresence = async (
+  presenceStopBody: PresenceStopBody,
+  options?: RequestInit,
+): Promise<PresenceStatus> => {
+  return customFetch<PresenceStatus>(getStopPresenceUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(presenceStopBody),
+  });
+};
+
+export const getStopPresenceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stopPresence>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof stopPresence>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  const mutationKey = ["stopPresence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof stopPresence>>,
+    { data: BodyType<PresenceStopBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return stopPresence(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StopPresenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof stopPresence>>
+>;
+export type StopPresenceMutationBody = BodyType<PresenceStopBody>;
+export type StopPresenceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Close the Discord gateway connection (account goes offline)
+ */
+export const useStopPresence = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stopPresence>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof stopPresence>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  return useMutation(getStopPresenceMutationOptions(options));
+};
+
+/**
+ * @summary Get current presence connection status for a token
+ */
+export const getGetPresenceStatusUrl = () => {
+  return `/api/discord/presence/status`;
+};
+
+export const getPresenceStatus = async (
+  presenceStopBody: PresenceStopBody,
+  options?: RequestInit,
+): Promise<PresenceStatus> => {
+  return customFetch<PresenceStatus>(getGetPresenceStatusUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(presenceStopBody),
+  });
+};
+
+export const getGetPresenceStatusMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof getPresenceStatus>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof getPresenceStatus>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  const mutationKey = ["getPresenceStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof getPresenceStatus>>,
+    { data: BodyType<PresenceStopBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return getPresenceStatus(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GetPresenceStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof getPresenceStatus>>
+>;
+export type GetPresenceStatusMutationBody = BodyType<PresenceStopBody>;
+export type GetPresenceStatusMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Get current presence connection status for a token
+ */
+export const useGetPresenceStatus = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof getPresenceStatus>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof getPresenceStatus>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  return useMutation(getGetPresenceStatusMutationOptions(options));
+};
+
+/**
+ * @summary Begin a multi-day passive warm-up of read-only activity
+ */
+export const getStartWarmupUrl = () => {
+  return `/api/discord/warmup/start`;
+};
+
+export const startWarmup = async (
+  warmupStartBody: WarmupStartBody,
+  options?: RequestInit,
+): Promise<WarmupStatus> => {
+  return customFetch<WarmupStatus>(getStartWarmupUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(warmupStartBody),
+  });
+};
+
+export const getStartWarmupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startWarmup>>,
+    TError,
+    { data: BodyType<WarmupStartBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startWarmup>>,
+  TError,
+  { data: BodyType<WarmupStartBody> },
+  TContext
+> => {
+  const mutationKey = ["startWarmup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startWarmup>>,
+    { data: BodyType<WarmupStartBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return startWarmup(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartWarmupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startWarmup>>
+>;
+export type StartWarmupMutationBody = BodyType<WarmupStartBody>;
+export type StartWarmupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Begin a multi-day passive warm-up of read-only activity
+ */
+export const useStartWarmup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startWarmup>>,
+    TError,
+    { data: BodyType<WarmupStartBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startWarmup>>,
+  TError,
+  { data: BodyType<WarmupStartBody> },
+  TContext
+> => {
+  return useMutation(getStartWarmupMutationOptions(options));
+};
+
+/**
+ * @summary Cancel an in-progress warm-up
+ */
+export const getStopWarmupUrl = () => {
+  return `/api/discord/warmup/stop`;
+};
+
+export const stopWarmup = async (
+  presenceStopBody: PresenceStopBody,
+  options?: RequestInit,
+): Promise<WarmupStatus> => {
+  return customFetch<WarmupStatus>(getStopWarmupUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(presenceStopBody),
+  });
+};
+
+export const getStopWarmupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stopWarmup>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof stopWarmup>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  const mutationKey = ["stopWarmup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof stopWarmup>>,
+    { data: BodyType<PresenceStopBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return stopWarmup(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StopWarmupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof stopWarmup>>
+>;
+export type StopWarmupMutationBody = BodyType<PresenceStopBody>;
+export type StopWarmupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Cancel an in-progress warm-up
+ */
+export const useStopWarmup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stopWarmup>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof stopWarmup>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  return useMutation(getStopWarmupMutationOptions(options));
+};
+
+/**
+ * @summary Get current warm-up state for a token
+ */
+export const getGetWarmupStatusUrl = () => {
+  return `/api/discord/warmup/status`;
+};
+
+export const getWarmupStatus = async (
+  presenceStopBody: PresenceStopBody,
+  options?: RequestInit,
+): Promise<WarmupStatus> => {
+  return customFetch<WarmupStatus>(getGetWarmupStatusUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(presenceStopBody),
+  });
+};
+
+export const getGetWarmupStatusMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof getWarmupStatus>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof getWarmupStatus>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  const mutationKey = ["getWarmupStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof getWarmupStatus>>,
+    { data: BodyType<PresenceStopBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return getWarmupStatus(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GetWarmupStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof getWarmupStatus>>
+>;
+export type GetWarmupStatusMutationBody = BodyType<PresenceStopBody>;
+export type GetWarmupStatusMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Get current warm-up state for a token
+ */
+export const useGetWarmupStatus = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof getWarmupStatus>>,
+    TError,
+    { data: BodyType<PresenceStopBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof getWarmupStatus>>,
+  TError,
+  { data: BodyType<PresenceStopBody> },
+  TContext
+> => {
+  return useMutation(getGetWarmupStatusMutationOptions(options));
 };
 
 /**

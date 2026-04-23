@@ -81,6 +81,8 @@ export interface RunAutoReplyBody {
   persona?: string;
   /** Optional exact message to send instead of generating an AI reply */
   fixedMessage?: string;
+  /** Optional list of message variants. When non-empty, one is picked at random per send (rotation) instead of using fixedMessage. */
+  fixedMessageVariants?: string[];
   /** If non-empty, only reply to DMs whose last message contains at least one of these (case-insensitive) */
   triggerKeywords?: string[];
   /** Maximum number of fixed-message replies allowed per recipient/channel (0 = unlimited) */
@@ -102,6 +104,41 @@ export interface RunAutoReplyResult {
   replied: number;
   skipped: number;
   details: AutoReplyDetail[];
+}
+
+export interface PresenceStartBody {
+  token: string;
+  /** Discord presence status (online | idle | dnd | invisible) */
+  status?: string;
+}
+
+export interface PresenceStopBody {
+  token: string;
+}
+
+export interface PresenceStatus {
+  connected: boolean;
+  status?: string | null;
+  uptimeMs: number;
+  sessionId?: string | null;
+}
+
+export interface WarmupStartBody {
+  token: string;
+  /** Length of the warmup window in days (e.g. 3) */
+  days: number;
+}
+
+export interface WarmupStatus {
+  active: boolean;
+  startedAt?: number;
+  endsAt?: number;
+  remainingMs: number;
+  ticksDone: number;
+  channelsBrowsed?: number;
+  guildsOpened?: number;
+  messagesRead?: number;
+  lastTickAt?: number;
 }
 
 export interface CreateSessionBody {

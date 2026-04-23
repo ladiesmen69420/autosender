@@ -108,6 +108,12 @@ export const RunAutoReplyBody = zod.object({
     .describe(
       "Optional exact message to send instead of generating an AI reply",
     ),
+  fixedMessageVariants: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Optional list of message variants. When non-empty, one is picked at random per send (rotation) instead of using fixedMessage.",
+    ),
   triggerKeywords: zod
     .array(zod.string())
     .optional()
@@ -145,6 +151,110 @@ export const RunAutoReplyResponse = zod.object({
       success: zod.boolean(),
     }),
   ),
+});
+
+/**
+ * @summary Open a Discord gateway connection so the account appears online
+ */
+export const StartPresenceBody = zod.object({
+  token: zod.string(),
+  status: zod
+    .string()
+    .optional()
+    .describe("Discord presence status (online | idle | dnd | invisible)"),
+});
+
+export const StartPresenceResponse = zod.object({
+  connected: zod.boolean(),
+  status: zod.string().nullish(),
+  uptimeMs: zod.number(),
+  sessionId: zod.string().nullish(),
+});
+
+/**
+ * @summary Close the Discord gateway connection (account goes offline)
+ */
+export const StopPresenceBody = zod.object({
+  token: zod.string(),
+});
+
+export const StopPresenceResponse = zod.object({
+  connected: zod.boolean(),
+  status: zod.string().nullish(),
+  uptimeMs: zod.number(),
+  sessionId: zod.string().nullish(),
+});
+
+/**
+ * @summary Get current presence connection status for a token
+ */
+export const GetPresenceStatusBody = zod.object({
+  token: zod.string(),
+});
+
+export const GetPresenceStatusResponse = zod.object({
+  connected: zod.boolean(),
+  status: zod.string().nullish(),
+  uptimeMs: zod.number(),
+  sessionId: zod.string().nullish(),
+});
+
+/**
+ * @summary Begin a multi-day passive warm-up of read-only activity
+ */
+export const StartWarmupBody = zod.object({
+  token: zod.string(),
+  days: zod.number().describe("Length of the warmup window in days (e.g. 3)"),
+});
+
+export const StartWarmupResponse = zod.object({
+  active: zod.boolean(),
+  startedAt: zod.number().optional(),
+  endsAt: zod.number().optional(),
+  remainingMs: zod.number(),
+  ticksDone: zod.number(),
+  channelsBrowsed: zod.number().optional(),
+  guildsOpened: zod.number().optional(),
+  messagesRead: zod.number().optional(),
+  lastTickAt: zod.number().optional(),
+});
+
+/**
+ * @summary Cancel an in-progress warm-up
+ */
+export const StopWarmupBody = zod.object({
+  token: zod.string(),
+});
+
+export const StopWarmupResponse = zod.object({
+  active: zod.boolean(),
+  startedAt: zod.number().optional(),
+  endsAt: zod.number().optional(),
+  remainingMs: zod.number(),
+  ticksDone: zod.number(),
+  channelsBrowsed: zod.number().optional(),
+  guildsOpened: zod.number().optional(),
+  messagesRead: zod.number().optional(),
+  lastTickAt: zod.number().optional(),
+});
+
+/**
+ * @summary Get current warm-up state for a token
+ */
+export const GetWarmupStatusBody = zod.object({
+  token: zod.string(),
+});
+
+export const GetWarmupStatusResponse = zod.object({
+  active: zod.boolean(),
+  startedAt: zod.number().optional(),
+  endsAt: zod.number().optional(),
+  remainingMs: zod.number(),
+  ticksDone: zod.number(),
+  channelsBrowsed: zod.number().optional(),
+  guildsOpened: zod.number().optional(),
+  messagesRead: zod.number().optional(),
+  lastTickAt: zod.number().optional(),
 });
 
 /**
