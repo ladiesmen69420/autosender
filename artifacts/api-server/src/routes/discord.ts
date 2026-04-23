@@ -13,6 +13,7 @@ import {
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { discordHeaders } from "../lib/discord-headers";
+import { discordFetch } from "../lib/discord-fetch";
 
 function jitter(min: number, max: number): Promise<void> {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
@@ -23,7 +24,7 @@ function jitter(min: number, max: number): Promise<void> {
 // while the textbox is focused; we mirror this.
 async function sendTyping(token: string, channelId: string): Promise<void> {
   try {
-    await fetch(`https://discord.com/api/v10/channels/${channelId}/typing`, {
+    await discordFetch(`https://discord.com/api/v10/channels/${channelId}/typing`, {
       method: "POST",
       headers: discordHeaders(token),
     });
@@ -37,7 +38,7 @@ async function sendTyping(token: string, channelId: string): Promise<void> {
 // strong "this is a selfbot" signal.
 async function ackMessage(token: string, channelId: string, messageId: string): Promise<void> {
   try {
-    await fetch(
+    await discordFetch(
       `https://discord.com/api/v10/channels/${channelId}/messages/${messageId}/ack`,
       {
         method: "POST",
@@ -48,6 +49,75 @@ async function ackMessage(token: string, channelId: string, messageId: string): 
   } catch {
     // ack failures are non-fatal
   }
+}
+
+// Mimic the official client's "user opened this DM" sequence. Discord's
+// passive-risk detection looks for messages that appear without the normal
+// preceding traffic (channel metadata fetch + recent history fetch + science
+// telemetry). Hitting this sequence before sending makes the request stream
+// indistinguishable from a real human opening the chat and replying.
+async function warmupChannel(token: string, channelId: string): Promise<void> {
+  try {
+    await discordFetch(`https://discord.com/api/v10/channels/${channelId}`, {
+      method: "GET",
+      headers: discordHeaders(token, { contentType: false }),
+    });
+  } catch {
+    // non-fatal
+  }
+  await jitter(150, 400);
+  try {
+    await discordFetch(
+      `https://discord.com/api/v10/channels/${channelId}/messages?limit=50`,
+      { method: "GET", headers: discordHeaders(token, { contentType: false }) },
+    );
+  } catch {
+    // non-fatal
+  }
+  await jitter(120, 350);
+  // Fire-and-forget science telemetry — official client sends this on chat open.
+  try {
+    const event = {
+      events: [
+        {
+          type: "channel_opened",
+          properties: { channel_id: channelId, channel_type: 1 },
+        },
+      ],
+    };
+    await discordFetch("https://discord.com/api/v10/science", {
+      method: "POST",
+      headers: discordHeaders(token),
+      body: JSON.stringify(event),
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
+// Detects URLs that are very likely to be flagged by Discord's external link
+// intelligence: bare IPs, link shorteners (which hide the final domain), or
+// suspiciously young / sketchy TLDs commonly used in scams. Used so we can
+// warn callers before sending a message that contains them.
+const SUSPICIOUS_SHORTENERS = new Set([
+  "bit.ly", "tinyurl.com", "rebrand.ly", "shorturl.at", "rb.gy",
+  "cutt.ly", "is.gd", "t.co", "tiny.cc", "ow.ly",
+]);
+const SUSPICIOUS_TLDS = new Set([
+  "tk", "ml", "ga", "cf", "gq", "xyz", "top", "click", "country", "stream", "loan", "work", "rest", "buzz",
+]);
+function detectRiskyLinks(text: string): string[] {
+  const out: string[] = [];
+  const re = /https?:\/\/([^\s/)"']+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const host = m[1].toLowerCase();
+    if (/^\d+\.\d+\.\d+\.\d+/.test(host)) { out.push(`Bare IP host (${host})`); continue; }
+    if (SUSPICIOUS_SHORTENERS.has(host)) { out.push(`Link shortener (${host})`); continue; }
+    const tld = host.split(".").pop() ?? "";
+    if (SUSPICIOUS_TLDS.has(tld)) { out.push(`High-risk TLD .${tld} (${host})`); continue; }
+  }
+  return out;
 }
 
 // Simulate a human composing time scaled to the message length:
@@ -102,7 +172,7 @@ async function fetchMessageRequests(token: string): Promise<DiscordChannel[]> {
   // Discord exposes pending message requests at this endpoint for user accounts.
   // It may 404 on accounts without the feature; treat any failure as an empty list.
   try {
-    const r = await fetch("https://discord.com/api/v10/users/@me/message-requests", {
+    const r = await discordFetch("https://discord.com/api/v10/users/@me/message-requests", {
       headers: discordHeaders(token, { contentType: false }),
     });
     if (!r.ok) return [];
@@ -122,9 +192,10 @@ function makeHumanizedPrompt(persona?: string): string {
     "Keep it relaxed, specific to the message, and avoid polished marketing language.",
   ];
   const style = variants[Math.floor(Math.random() * variants.length)];
+  const safety = `Never include any URL, link, invite code, phone number, email address, crypto wallet address, or external contact handle. Never use markdown, hashtags, @everyone, @here, or sign-offs.`;
   return persona
-    ? `You are a Discord user replying to a direct message. ${persona}. ${style} Write 1-2 short sentences. Do not announce that you are AI. Avoid markdown, hashtags, sign-offs, and robotic phrases like "I understand" unless they truly fit.`
-    : `You are a Discord user replying to a direct message. ${style} Match the sender's tone. Write 1-2 short sentences. Do not announce that you are AI. Avoid markdown, hashtags, sign-offs, and robotic phrases like "I understand" unless they truly fit.`;
+    ? `You are a Discord user replying to a direct message. ${persona}. ${style} Write 1-2 short sentences. Do not announce that you are AI. ${safety} Avoid robotic phrases like "I understand" unless they truly fit.`
+    : `You are a Discord user replying to a direct message. ${style} Match the sender's tone. Write 1-2 short sentences. Do not announce that you are AI. ${safety} Avoid robotic phrases like "I understand" unless they truly fit.`;
 }
 
 router.post("/validate-token", async (req, res) => {
@@ -137,7 +208,7 @@ router.post("/validate-token", async (req, res) => {
   const { token } = parsed.data;
 
   try {
-    const response = await fetch("https://discord.com/api/v10/users/@me", {
+    const response = await discordFetch("https://discord.com/api/v10/users/@me", {
       headers: discordHeaders(token, { contentType: false }),
     });
 
@@ -180,7 +251,7 @@ router.post("/send-messages", async (req, res) => {
     const content = message;
 
     try {
-      const response = await fetch(
+      const response = await discordFetch(
         `https://discord.com/api/v10/channels/${channelId}/messages`,
         {
           method: "POST",
@@ -221,7 +292,7 @@ router.post("/dms", async (req, res) => {
 
   try {
     // Get the current user's ID
-    const meRes = await fetch("https://discord.com/api/v10/users/@me", {
+    const meRes = await discordFetch("https://discord.com/api/v10/users/@me", {
       headers: discordHeaders(token, { contentType: false }),
     });
     if (!meRes.ok) {
@@ -231,7 +302,7 @@ router.post("/dms", async (req, res) => {
     const me = (await meRes.json()) as { id: string };
 
     // Get DM channels (open conversations)
-    const channelsRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
+    const channelsRes = await discordFetch("https://discord.com/api/v10/users/@me/channels", {
       headers: discordHeaders(token, { contentType: false }),
     });
     if (!channelsRes.ok) {
@@ -257,7 +328,7 @@ router.post("/dms", async (req, res) => {
 
     for (const channel of allChannels.slice(0, 30)) {
       try {
-        const msgsRes = await fetch(
+        const msgsRes = await discordFetch(
           `https://discord.com/api/v10/channels/${channel.id}/messages?limit=1`,
           { headers: discordHeaders(token, { contentType: false }) },
         );
@@ -322,7 +393,7 @@ router.post("/ai-reply", async (req, res) => {
     let sent = false;
     if (token && channelId && reply) {
       try {
-        const sendRes = await fetch(
+        const sendRes = await discordFetch(
           `https://discord.com/api/v10/channels/${channelId}/messages`,
           {
             method: "POST",
@@ -360,7 +431,7 @@ router.post("/auto-reply", async (req, res) => {
 
   try {
     // Get current user
-    const meRes = await fetch("https://discord.com/api/v10/users/@me", {
+    const meRes = await discordFetch("https://discord.com/api/v10/users/@me", {
       headers: discordHeaders(token, { contentType: false }),
     });
     if (!meRes.ok) {
@@ -370,7 +441,7 @@ router.post("/auto-reply", async (req, res) => {
     const me = (await meRes.json()) as { id: string };
 
     // Get DM channels
-    const channelsRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
+    const channelsRes = await discordFetch("https://discord.com/api/v10/users/@me/channels", {
       headers: discordHeaders(token, { contentType: false }),
     });
     if (!channelsRes.ok) {
@@ -407,7 +478,7 @@ router.post("/auto-reply", async (req, res) => {
         // Random gap between checking conversations (mimics scrolling through DMs)
         if (ordered.indexOf(channel) > 0) await jitter(1500, 4500);
 
-        const msgsRes = await fetch(
+        const msgsRes = await discordFetch(
           `https://discord.com/api/v10/channels/${channel.id}/messages?limit=1`,
           { headers: discordHeaders(token, { contentType: false }) },
         );
@@ -457,14 +528,25 @@ router.post("/auto-reply", async (req, res) => {
           continue;
         }
 
-        // Mimic the official client: mark the incoming message as read,
-        // pause as if the user just opened the chat, then show typing for a
+        // External link intelligence: warn loudly if the outgoing message
+        // contains hosts that are known-bad signals (bare IPs, link
+        // shorteners, sketchy TLDs). Discord weighs these heavily for
+        // scam/phishing detection.
+        const risky = detectRiskyLinks(reply);
+        if (risky.length > 0) {
+          req.log.warn({ channelId: channel.id, risky, replyPreview: reply.slice(0, 80) }, "Reply contains links Discord is likely to flag as scam/phishing — consider removing");
+        }
+
+        // Mimic the official client end-to-end: warm the channel (GET
+        // metadata + recent history + science telemetry), mark as read, pause
+        // like the user just glanced at the message, then show typing for a
         // duration proportional to the reply length.
+        await warmupChannel(token, channel.id);
         await ackMessage(token, channel.id, lastMsg.id);
         await humanComposeDelay(token, channel.id, reply);
 
         // Send the reply
-        const sendRes = await fetch(
+        const sendRes = await discordFetch(
           `https://discord.com/api/v10/channels/${channel.id}/messages`,
           {
             method: "POST",
