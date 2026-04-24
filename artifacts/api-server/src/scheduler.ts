@@ -1,14 +1,23 @@
 import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
-import { eq, and, gte } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logger } from "./lib/logger";
 import { discordHeaders, pickStableUA } from "./lib/discord-headers";
 
 const MAX_CONSECUTIVE_FAILURES = 5;
 
-const timers = new Map<number, ReturnType<typeof setTimeout>>();
-const sendCounts = new Map<number, number>();
+/* ─── Rotation state ─────────────────────────────────────────────────────── */
+// All running campaigns share one rotation queue. The scheduler fires them
+// one at a time in order, cycling through indefinitely.
+const rotationQueue: number[] = [];   // campaign IDs in rotation order
+let rotationCursor = 0;               // next index to fire
+let rotationActive = false;
+let rotationTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Per-campaign bookkeeping for stats / UI
+const sendCounts    = new Map<number, number>();
 const nextSendTimes = new Map<number, Date>();
 
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
 function pickUA(token: string): string {
   return pickStableUA(token);
 }
@@ -93,6 +102,7 @@ export async function doSend(
   return { ok: res.ok, status: res.status, retryAfterMs };
 }
 
+/* ─── Send window helpers ────────────────────────────────────────────────── */
 function parseHHMM(s: string | null | undefined): number | null {
   if (!s) return null;
   const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
@@ -105,13 +115,11 @@ function parseHHMM(s: string | null | undefined): number | null {
 
 function isWithinSendWindow(start: string | null | undefined, end: string | null | undefined): boolean {
   const startMin = parseHHMM(start);
-  const endMin = parseHHMM(end);
+  const endMin   = parseHHMM(end);
   if (startMin === null || endMin === null) return true; // no window = always active
-  const now = new Date();
+  const now        = new Date();
   const currentMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-  if (startMin <= endMin) {
-    return currentMin >= startMin && currentMin < endMin;
-  }
+  if (startMin <= endMin) return currentMin >= startMin && currentMin < endMin;
   // wraps midnight: e.g. 22:00 → 06:00
   return currentMin >= startMin || currentMin < endMin;
 }
@@ -119,21 +127,19 @@ function isWithinSendWindow(start: string | null | undefined, end: string | null
 function minutesUntilWindowOpen(start: string | null | undefined): number {
   const startMin = parseHHMM(start);
   if (startMin === null) return 0;
-  const now = new Date();
+  const now        = new Date();
   const currentMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const diff = startMin - currentMin;
+  const diff       = startMin - currentMin;
   return diff > 0 ? diff : diff + 24 * 60;
 }
 
-function pickMessage(campaign: { message: string; messageVariants?: string[] | null }): string {
-  const variants = campaign.messageVariants?.filter(Boolean);
-  if (variants && variants.length > 0) {
-    return variants[Math.floor(Math.random() * variants.length)];
-  }
-  return campaign.message;
-}
-
-async function sendCampaign(id: number): Promise<void> {
+/* ─── Core: execute one campaign send cycle ──────────────────────────────── */
+/**
+ * Fires one send cycle for the given campaign.
+ * Returns the milliseconds to wait before triggering the NEXT rotation step,
+ * and whether the campaign should be removed from the queue.
+ */
+async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remove: boolean }> {
   const [campaign] = await db
     .select()
     .from(campaignsTable)
@@ -141,22 +147,20 @@ async function sendCampaign(id: number): Promise<void> {
     .limit(1);
 
   if (!campaign || !campaign.running) {
-    timers.delete(id);
-    sendCounts.delete(id);
-    nextSendTimes.delete(id);
-    return;
+    return { nextMs: 0, remove: true };
   }
 
-  // Send window enforcement: if outside the window, wait until it opens
+  // Send window enforcement — skip this campaign, rotate quickly to the next
   if (!isWithinSendWindow(campaign.sendWindowStart, campaign.sendWindowEnd)) {
     const waitMins = minutesUntilWindowOpen(campaign.sendWindowStart);
-    const waitMs = waitMins * 60 * 1000 + Math.random() * 60 * 1000; // jitter ±1min
-    const nextAt = new Date(Date.now() + waitMs);
-    nextSendTimes.set(id, nextAt);
-    await writeLog(id, "warning", `Outside send window — next attempt at ${campaign.sendWindowStart} UTC`, undefined, `Current time is outside the configured send window (${campaign.sendWindowStart}–${campaign.sendWindowEnd} UTC). Waiting ${waitMins} min.`);
-    const timer = setTimeout(() => sendCampaign(id), waitMs);
-    timers.set(id, timer);
-    return;
+    await writeLog(
+      id,
+      "warning",
+      `Outside send window (${campaign.sendWindowStart}–${campaign.sendWindowEnd} UTC) — skipping this rotation`,
+      undefined,
+      `${waitMins} min until window opens`,
+    );
+    return { nextMs: 2000, remove: false };
   }
 
   const cycleCount = (sendCounts.get(id) ?? 0) + 1;
@@ -173,15 +177,13 @@ async function sendCampaign(id: number): Promise<void> {
     if (i > 0) await humanDelay(600, 2500);
 
     try {
-      const messageToSend = pickMessage(campaign);
-      const result = await doSend(campaign.token, channelId, messageToSend, ua);
+      const result = await doSend(campaign.token, channelId, campaign.message, ua);
 
       if (result.status === 429) {
         rateLimited = true;
         retryAfterMs = Math.max(retryAfterMs, result.retryAfterMs);
         failed++;
-        const info = getStatusInfo(429);
-        await writeLog(id, "warning", `Rate limited on channel ${channelId}`, channelId, "Discord returned 429 Too Many Requests", info.suggestion);
+        await writeLog(id, "warning", `Rate limited on channel ${channelId}`, channelId, "Discord returned 429 Too Many Requests", getStatusInfo(429).suggestion);
       } else if (result.ok) {
         sent++;
         await writeLog(id, "success", `Message sent to channel ${channelId}`, channelId);
@@ -193,16 +195,17 @@ async function sendCampaign(id: number): Promise<void> {
     } catch (err) {
       failed++;
       const errMsg = err instanceof Error ? err.message : String(err);
-      await writeLog(id, "error", `Network error sending to ${channelId}`, channelId, errMsg, "Check your server's internet connection. The campaign will retry automatically.");
+      await writeLog(id, "error", `Network error sending to ${channelId}`, channelId, errMsg, "Check your server's internet connection.");
       logger.error({ err, campaignId: id, channelId }, "Network send error");
     }
   }
 
+  // Rate limit protection
   let newRateLimitBonus = campaign.rateLimitBonus;
   if (campaign.rateLimitProtection) {
     if (rateLimited) {
       newRateLimitBonus = Math.min(campaign.rateLimitBonus + 10, 300);
-      await writeLog(id, "warning", `Rate limit protection applied: +${newRateLimitBonus - campaign.rateLimitBonus}s delay added`, undefined, `New effective interval: ${campaign.delay + newRateLimitBonus}s`, "This is automatic. Disable rate limit protection in campaign settings if you want manual control.");
+      await writeLog(id, "warning", `Rate limit protection: +${newRateLimitBonus - campaign.rateLimitBonus}s delay added`, undefined, `New effective interval: ${campaign.delay + newRateLimitBonus}s`);
     } else if (cycleCount % 5 === 0 && campaign.rateLimitBonus > 0) {
       newRateLimitBonus = Math.max(campaign.rateLimitBonus - 2, 0);
     }
@@ -210,21 +213,17 @@ async function sendCampaign(id: number): Promise<void> {
     newRateLimitBonus = 0;
   }
 
-  // Track consecutive failures for auto-stop
+  // Consecutive failure tracking / auto-stop
   const allFailed = sent === 0 && failed > 0;
-  const newConsecutiveFailures = allFailed
-    ? campaign.consecutiveFailures + 1
-    : 0;
+  const newConsecutiveFailures = allFailed ? campaign.consecutiveFailures + 1 : 0;
 
-  // Auto-stop if too many consecutive failures
   if (newConsecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
     await writeLog(
-      id,
-      "error",
+      id, "error",
       `Campaign auto-stopped after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
       undefined,
       `All sends have failed ${MAX_CONSECUTIVE_FAILURES} times in a row.`,
-      "Check your Discord token (may be invalid/expired), channel IDs, and permissions. Update and restart the campaign.",
+      "Check your Discord token (may be invalid/expired), channel IDs, and permissions.",
     );
     await db
       .update(campaignsTable)
@@ -237,11 +236,8 @@ async function sendCampaign(id: number): Promise<void> {
         lastSentAt: new Date(),
       })
       .where(eq(campaignsTable.id, id));
-    timers.delete(id);
-    sendCounts.delete(id);
-    nextSendTimes.delete(id);
     logger.warn({ campaignId: id }, "Campaign auto-stopped due to consecutive failures");
-    return;
+    return { nextMs: 0, remove: true };
   }
 
   await db
@@ -255,19 +251,16 @@ async function sendCampaign(id: number): Promise<void> {
     })
     .where(eq(campaignsTable.id, id));
 
+  // Verify still running after DB write
   const [fresh] = await db
     .select({ running: campaignsTable.running })
     .from(campaignsTable)
     .where(eq(campaignsTable.id, id))
     .limit(1);
 
-  if (!fresh?.running) {
-    timers.delete(id);
-    sendCounts.delete(id);
-    nextSendTimes.delete(id);
-    return;
-  }
+  if (!fresh?.running) return { nextMs: 0, remove: true };
 
+  // Compute delay until the next rotation step fires
   let nextMs = (campaign.delay + newRateLimitBonus) * 1000;
   if (campaign.jitter > 0) {
     nextMs += (campaign.delay * 1000 * Math.random() * campaign.jitter) / 100;
@@ -275,37 +268,94 @@ async function sendCampaign(id: number): Promise<void> {
   if (rateLimited && retryAfterMs > 0) {
     nextMs = Math.max(nextMs, retryAfterMs + 2000);
   }
+
+  // Burst break every 15 cycles
   if (cycleCount % 15 === 0) {
     const burstBreakMs = 30000 + Math.random() * 60000;
     nextMs += burstBreakMs;
-    await writeLog(id, "warning", `Burst break applied: +${Math.round(burstBreakMs / 1000)}s pause`, undefined, "Every 15 cycles a random pause is added to mimic human behavior.", "This is normal anti-detection behavior.");
+    await writeLog(id, "warning", `Burst break applied: +${Math.round(burstBreakMs / 1000)}s pause`, undefined, "Every 15 cycles a random pause is added to mimic human behavior.");
     logger.info({ campaignId: id }, "Burst break applied");
   }
 
-  const nextAt = new Date(Date.now() + nextMs);
-  nextSendTimes.set(id, nextAt);
-
-  const timer = setTimeout(() => sendCampaign(id), nextMs);
-  timers.set(id, timer);
+  return { nextMs, remove: false };
 }
 
+/* ─── Rotation loop ──────────────────────────────────────────────────────── */
+async function runRotationStep(): Promise<void> {
+  if (rotationQueue.length === 0) {
+    rotationActive = false;
+    rotationTimer  = null;
+    return;
+  }
+
+  rotationActive = true;
+
+  // Pick next campaign in the queue
+  if (rotationCursor >= rotationQueue.length) rotationCursor = 0;
+  const id = rotationQueue[rotationCursor];
+  rotationCursor = (rotationCursor + 1) % rotationQueue.length;
+
+  const { nextMs, remove } = await executeCampaignCycle(id);
+
+  if (remove) {
+    const idx = rotationQueue.indexOf(id);
+    if (idx !== -1) {
+      rotationQueue.splice(idx, 1);
+      if (rotationCursor > idx) rotationCursor = Math.max(0, rotationCursor - 1);
+      if (rotationCursor >= rotationQueue.length) rotationCursor = 0;
+    }
+    sendCounts.delete(id);
+    nextSendTimes.delete(id);
+
+    if (rotationQueue.length === 0) {
+      rotationActive = false;
+      rotationTimer  = null;
+      return;
+    }
+    // Continue quickly to next campaign
+    rotationTimer = setTimeout(runRotationStep, 500);
+    return;
+  }
+
+  // Estimate when this campaign will fire again (after a full rotation cycle)
+  const queueLen = Math.max(1, rotationQueue.length);
+  nextSendTimes.set(id, new Date(Date.now() + nextMs * queueLen));
+
+  rotationTimer = setTimeout(runRotationStep, nextMs);
+}
+
+/* ─── Public API ─────────────────────────────────────────────────────────── */
 export function startCampaignSchedule(id: number): void {
-  if (timers.has(id)) return;
-  sendCampaign(id);
-  logger.info({ campaignId: id }, "Campaign schedule started");
+  if (!rotationQueue.includes(id)) {
+    rotationQueue.push(id);
+    logger.info({ campaignId: id, queueLength: rotationQueue.length }, "Campaign added to rotation");
+  }
+  if (!rotationActive) {
+    runRotationStep();
+  }
 }
 
 export function stopCampaignSchedule(id: number): void {
-  const timer = timers.get(id);
-  if (timer) clearTimeout(timer);
-  timers.delete(id);
+  const idx = rotationQueue.indexOf(id);
+  if (idx !== -1) {
+    rotationQueue.splice(idx, 1);
+    if (rotationCursor > idx) rotationCursor = Math.max(0, rotationCursor - 1);
+    if (rotationCursor >= rotationQueue.length) rotationCursor = 0;
+    logger.info({ campaignId: id, queueLength: rotationQueue.length }, "Campaign removed from rotation");
+  }
   sendCounts.delete(id);
   nextSendTimes.delete(id);
-  logger.info({ campaignId: id }, "Campaign schedule stopped");
+
+  // If queue is now empty, cancel the timer
+  if (rotationQueue.length === 0 && rotationTimer) {
+    clearTimeout(rotationTimer);
+    rotationTimer  = null;
+    rotationActive = false;
+  }
 }
 
 export function isRunning(id: number): boolean {
-  return timers.has(id);
+  return rotationQueue.includes(id);
 }
 
 export function getNextSendAt(id: number): Date | null {

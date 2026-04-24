@@ -26,7 +26,7 @@ import {
   Activity, Clock, TrendingUp, MessageSquare,
   Cpu, Radio, AlertTriangle, CheckCircle, XCircle, Loader2,
   ChevronDown, ChevronUp, Shield, Gauge, RotateCcw, FlaskConical,
-  Filter, X, MoreVertical, Copy, LogOut, Wifi, WifiOff, Moon, ListPlus,
+  Filter, X, MoreVertical, Copy, LogOut, Wifi, WifiOff, Moon,
 } from "lucide-react";
 import logoUrl from "/logo.png";
 
@@ -38,7 +38,6 @@ type ServerCampaign = {
   sentCount: number; failedCount: number; rateLimitBonus: number;
   rateLimitProtection: boolean; sentToday: number; nextSendAt: string | null;
   lastSentAt: string | null; createdAt: string; consecutiveFailures: number;
-  messageVariants: string[] | null;
   sendWindowStart: string | null;
   sendWindowEnd: string | null;
 };
@@ -619,11 +618,11 @@ export default function Home() {
   const [drafts, setDrafts] = useLocalState<Record<number | string, {
     name: string; token: string; channelsInput: string; message: string;
     delay: number; jitter: number; expanded: boolean; editMode: boolean; tokenValid: boolean | null;
-    messageVariantsInput: string; sendWindowStart: string; sendWindowEnd: string;
+    sendWindowStart: string; sendWindowEnd: string;
   }>>("bb_drafts", {});
 
   const [showNewForm, setShowNewForm] = useState(false);
-  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, messageVariantsInput: "", sendWindowStart: "", sendWindowEnd: "" });
+  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "" });
 
   const [tokenInput, setTokenInput] = useLocalState("bb_token_input", "");
   const [tokenInfo, setTokenInfo] = useLocalState<TokenValidationResult | null>("bb_token_info", null);
@@ -699,7 +698,6 @@ export default function Home() {
             channelsInput: c.channels.join("\n"),
             message: c.message, delay: c.delay, jitter: c.jitter,
             expanded: true, editMode: false, tokenValid: null,
-            messageVariantsInput: (c.messageVariants ?? []).join("\n"),
             sendWindowStart: c.sendWindowStart ?? "",
             sendWindowEnd: c.sendWindowEnd ?? "",
           },
@@ -712,7 +710,7 @@ export default function Home() {
   function setDraft(id: number, updates: Partial<(typeof drafts)[number]>) {
     setDrafts((p) => ({
       ...p,
-      [id]: { ...(p[id] ?? { name: "", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, expanded: true, editMode: false, tokenValid: null, messageVariantsInput: "", sendWindowStart: "", sendWindowEnd: "" }), ...updates },
+      [id]: { ...(p[id] ?? { name: "", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, expanded: true, editMode: false, tokenValid: null, sendWindowStart: "", sendWindowEnd: "" }), ...updates },
     }));
   }
 
@@ -808,24 +806,19 @@ export default function Home() {
     } catch { setDraft(id, { tokenValid: false }); }
   };
 
-  function parseVariants(input: string): string[] {
-    return input.split("\n").map((s) => s.trim()).filter(Boolean);
-  }
-
   const handleCreateCampaign = async () => {
     if (!newForm.name || !newForm.token || !newForm.channelsInput || !newForm.message) {
       toast({ title: "Missing fields", description: "Name, token, channels, and message required.", variant: "destructive" });
       return;
     }
     const channels = newForm.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-    const messageVariants = parseVariants(newForm.messageVariantsInput);
     const sendWindowStart = newForm.sendWindowStart?.trim() || null;
     const sendWindowEnd = newForm.sendWindowEnd?.trim() || null;
     try {
-      const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, messageVariants, sendWindowStart, sendWindowEnd } as Parameters<typeof createCampaign.mutateAsync>[0]);
-      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, messageVariantsInput: newForm.messageVariantsInput, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd });
+      const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, sendWindowStart, sendWindowEnd } as Parameters<typeof createCampaign.mutateAsync>[0]);
+      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd });
       setShowNewForm(false);
-      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0, messageVariantsInput: "", sendWindowStart: "", sendWindowEnd: "" });
+      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "" });
       toast({ title: "Campaign Created", description: created.name });
     } catch { toast({ title: "Error", description: "Failed to create campaign.", variant: "destructive" }); }
   };
@@ -834,11 +827,10 @@ export default function Home() {
     const draft = getDraft(id);
     if (!draft) return;
     const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-    const messageVariants = parseVariants(draft.messageVariantsInput ?? "");
     const sendWindowStart = draft.sendWindowStart?.trim() || null;
     const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
     try {
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, messageVariants, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       setDraft(id, { editMode: false });
       toast({ title: "Saved", description: "Changes will take effect on next send cycle." });
     } catch { toast({ title: "Error", description: "Failed to save.", variant: "destructive" }); }
@@ -848,10 +840,9 @@ export default function Home() {
     const draft = getDraft(id);
     if (draft) {
       const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-      const messageVariants = parseVariants(draft.messageVariantsInput ?? "");
       const sendWindowStart = draft.sendWindowStart?.trim() || null;
       const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, messageVariants, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]).catch(() => {});
+      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]).catch(() => {});
     }
     try {
       await startCampaign.mutateAsync(id);
@@ -873,7 +864,7 @@ export default function Home() {
   const handleDuplicate = async (id: number) => {
     try {
       const created = await duplicateCampaign.mutateAsync(id);
-      setDraft(created.id, { name: created.name, token: created.token, channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: created.jitter, expanded: true, editMode: false, tokenValid: null, messageVariantsInput: (created.messageVariants ?? []).join("\n"), sendWindowStart: created.sendWindowStart ?? "", sendWindowEnd: created.sendWindowEnd ?? "" });
+      setDraft(created.id, { name: created.name, token: created.token, channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: created.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: created.sendWindowStart ?? "", sendWindowEnd: created.sendWindowEnd ?? "" });
       toast({ title: "Campaign Duplicated", description: created.name });
     } catch { toast({ title: "Error", description: "Failed to duplicate.", variant: "destructive" }); }
   };
@@ -1190,6 +1181,9 @@ export default function Home() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] gap-1"><Activity className="w-2.5 h-2.5" />Server-side 24/7</Badge>
                   <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[10px] gap-1"><Shield className="w-2.5 h-2.5" />Anti-detection</Badge>
+                  {runningCount > 1 && (
+                    <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px] gap-1"><RotateCcw className="w-2.5 h-2.5" />{runningCount} rotating</Badge>
+                  )}
                 </div>
                 <Button size="sm" className="h-8 bg-primary/80 hover:bg-primary text-white gap-1.5" onClick={() => setShowNewForm(!showNewForm)}>
                   <Plus className="w-3.5 h-3.5" />Add Campaign
@@ -1216,11 +1210,6 @@ export default function Home() {
                     <div>
                       <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Message</Label>
                       <Textarea value={newForm.message} onChange={(e) => setNewForm((p) => ({ ...p, message: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
-                    </div>
-                    <div>
-                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><ListPlus className="w-3 h-3" />Message Variants (one per line, optional)</Label>
-                      <Textarea value={newForm.messageVariantsInput} onChange={(e) => setNewForm((p) => ({ ...p, messageVariantsInput: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder={"Variant A\nVariant B\nVariant C"} />
-                      <p className="text-[10px] text-muted-foreground mt-1">When set, the scheduler picks one randomly per cycle (ignores Message above).</p>
                     </div>
                     <div>
                       <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><Clock className="w-3 h-3" />Send Window (UTC, optional)</Label>
@@ -1390,11 +1379,6 @@ export default function Home() {
                             <Textarea value={draft.message} onChange={(e) => setDraft(campaign.id, { message: e.target.value })} className="min-h-[72px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
                           </div>
                           <div>
-                            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><ListPlus className="w-3 h-3" />Message Variants <span className="text-primary font-mono">{parseVariants(draft.messageVariantsInput ?? "").length > 0 ? `${parseVariants(draft.messageVariantsInput ?? "").length} variants` : "off"}</span></Label>
-                            <Textarea value={draft.messageVariantsInput ?? ""} onChange={(e) => setDraft(campaign.id, { messageVariantsInput: e.target.value })} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder={"Variant A\nVariant B\nVariant C"} />
-                            <p className="text-[10px] text-muted-foreground mt-1">One per line. When set, randomly picked each cycle (overrides Message above).</p>
-                          </div>
-                          <div>
                             <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />Send Window (UTC) {(draft.sendWindowStart || draft.sendWindowEnd) && <span className="text-primary font-mono text-[9px]">{draft.sendWindowStart || "?"} → {draft.sendWindowEnd || "?"}</span>}</Label>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
@@ -1428,6 +1412,7 @@ export default function Home() {
                             <div>✓ Random User-Agent per request</div>
                             <div>✓ Human-like delays 0.6–2.5s between channels</div>
                             <div>✓ Burst break every 15 cycles (+30–90s pause)</div>
+                            <div>✓ Campaigns send in round-robin rotation — one at a time</div>
                           </div>
                           <Button size="sm" variant="default" className="w-full h-8 text-xs bg-primary/80 hover:bg-primary rounded-xl"
                             onClick={() => handleSaveCampaign(campaign.id)} disabled={updateCampaign.isPending}>
