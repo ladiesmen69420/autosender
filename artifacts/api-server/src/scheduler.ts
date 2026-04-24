@@ -93,6 +93,46 @@ export async function doSend(
   return { ok: res.ok, status: res.status, retryAfterMs };
 }
 
+function parseHHMM(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function isWithinSendWindow(start: string | null | undefined, end: string | null | undefined): boolean {
+  const startMin = parseHHMM(start);
+  const endMin = parseHHMM(end);
+  if (startMin === null || endMin === null) return true; // no window = always active
+  const now = new Date();
+  const currentMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  if (startMin <= endMin) {
+    return currentMin >= startMin && currentMin < endMin;
+  }
+  // wraps midnight: e.g. 22:00 → 06:00
+  return currentMin >= startMin || currentMin < endMin;
+}
+
+function minutesUntilWindowOpen(start: string | null | undefined): number {
+  const startMin = parseHHMM(start);
+  if (startMin === null) return 0;
+  const now = new Date();
+  const currentMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const diff = startMin - currentMin;
+  return diff > 0 ? diff : diff + 24 * 60;
+}
+
+function pickMessage(campaign: { message: string; messageVariants?: string[] | null }): string {
+  const variants = campaign.messageVariants?.filter(Boolean);
+  if (variants && variants.length > 0) {
+    return variants[Math.floor(Math.random() * variants.length)];
+  }
+  return campaign.message;
+}
+
 async function sendCampaign(id: number): Promise<void> {
   const [campaign] = await db
     .select()
@@ -104,6 +144,18 @@ async function sendCampaign(id: number): Promise<void> {
     timers.delete(id);
     sendCounts.delete(id);
     nextSendTimes.delete(id);
+    return;
+  }
+
+  // Send window enforcement: if outside the window, wait until it opens
+  if (!isWithinSendWindow(campaign.sendWindowStart, campaign.sendWindowEnd)) {
+    const waitMins = minutesUntilWindowOpen(campaign.sendWindowStart);
+    const waitMs = waitMins * 60 * 1000 + Math.random() * 60 * 1000; // jitter ±1min
+    const nextAt = new Date(Date.now() + waitMs);
+    nextSendTimes.set(id, nextAt);
+    await writeLog(id, "warning", `Outside send window — next attempt at ${campaign.sendWindowStart} UTC`, undefined, `Current time is outside the configured send window (${campaign.sendWindowStart}–${campaign.sendWindowEnd} UTC). Waiting ${waitMins} min.`);
+    const timer = setTimeout(() => sendCampaign(id), waitMs);
+    timers.set(id, timer);
     return;
   }
 
@@ -121,7 +173,8 @@ async function sendCampaign(id: number): Promise<void> {
     if (i > 0) await humanDelay(600, 2500);
 
     try {
-      const result = await doSend(campaign.token, channelId, campaign.message, ua);
+      const messageToSend = pickMessage(campaign);
+      const result = await doSend(campaign.token, channelId, messageToSend, ua);
 
       if (result.status === 429) {
         rateLimited = true;

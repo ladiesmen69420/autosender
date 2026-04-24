@@ -26,7 +26,7 @@ import {
   Activity, Clock, TrendingUp, MessageSquare,
   Cpu, Radio, AlertTriangle, CheckCircle, XCircle, Loader2,
   ChevronDown, ChevronUp, Shield, Gauge, RotateCcw, FlaskConical,
-  Filter, X, MoreVertical, Copy, LogOut,
+  Filter, X, MoreVertical, Copy, LogOut, Wifi, WifiOff, Moon, ListPlus,
 } from "lucide-react";
 import logoUrl from "/logo.png";
 
@@ -38,6 +38,9 @@ type ServerCampaign = {
   sentCount: number; failedCount: number; rateLimitBonus: number;
   rateLimitProtection: boolean; sentToday: number; nextSendAt: string | null;
   lastSentAt: string | null; createdAt: string; consecutiveFailures: number;
+  messageVariants: string[] | null;
+  sendWindowStart: string | null;
+  sendWindowEnd: string | null;
 };
 
 type CampaignLog = {
@@ -288,6 +291,54 @@ function useClearLogs() {
       await fetch(`${API}/campaigns/${id}/logs`, { method: "DELETE" });
     },
     onSuccess: (_d, id) => qc.invalidateQueries({ queryKey: ["campaign-logs", id] }),
+  });
+}
+
+function useSetPresence() {
+  return useMutation({
+    mutationFn: async ({ token, status }: { token: string; status: string }) => {
+      const res = await fetch(`${API}/discord/presence`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, status }),
+      });
+      if (!res.ok) throw new Error("Failed to set presence");
+      return res.json();
+    },
+  });
+}
+
+function useStopPresence() {
+  return useMutation({
+    mutationFn: async (token: string) => {
+      const res = await fetch(`${API}/discord/presence`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+      });
+      if (!res.ok) throw new Error("Failed to stop presence");
+      return res.json();
+    },
+  });
+}
+
+function useStartWarmup() {
+  return useMutation({
+    mutationFn: async (token: string) => {
+      const res = await fetch(`${API}/discord/warmup`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+      });
+      if (!res.ok) throw new Error("Failed to start warmup");
+      return res.json();
+    },
+  });
+}
+
+function useStopWarmup() {
+  return useMutation({
+    mutationFn: async (token: string) => {
+      const res = await fetch(`${API}/discord/warmup`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+      });
+      if (!res.ok) throw new Error("Failed to stop warmup");
+      return res.json();
+    },
   });
 }
 
@@ -553,6 +604,10 @@ export default function Home() {
   const resetStats = useResetStats();
   const testSend = useTestSend();
   const toggleRLP = useToggleRateLimitProtection();
+  const setPresenceMutation = useSetPresence();
+  const stopPresenceMutation = useStopPresence();
+  const startWarmupMutation = useStartWarmup();
+  const stopWarmupMutation = useStopWarmup();
 
   // User settings (synced to server)
   const { data: userSettings } = useGetUserSettings();
@@ -564,13 +619,21 @@ export default function Home() {
   const [drafts, setDrafts] = useLocalState<Record<number | string, {
     name: string; token: string; channelsInput: string; message: string;
     delay: number; jitter: number; expanded: boolean; editMode: boolean; tokenValid: boolean | null;
+    messageVariantsInput: string; sendWindowStart: string; sendWindowEnd: string;
   }>>("bb_drafts", {});
 
   const [showNewForm, setShowNewForm] = useState(false);
-  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", delay: 15, jitter: 0 });
+  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, messageVariantsInput: "", sendWindowStart: "", sendWindowEnd: "" });
 
   const [tokenInput, setTokenInput] = useLocalState("bb_token_input", "");
   const [tokenInfo, setTokenInfo] = useLocalState<TokenValidationResult | null>("bb_token_info", null);
+
+  // Presence & Warmup state
+  const [presenceToken, setPresenceToken] = useLocalState("bb_presence_token", "");
+  const [presenceStatus, setPresenceStatus] = useLocalState<"online" | "idle" | "dnd">("bb_presence_status", "online");
+  const [presenceActive, setPresenceActive] = useState(false);
+  const [warmupToken, setWarmupToken] = useLocalState("bb_warmup_token", "");
+  const [warmupActive, setWarmupActive] = useState(false);
 
   // AI Reply — local state, synced to server
   const [aiToken, setAiTokenLocal] = useState("");
@@ -636,6 +699,9 @@ export default function Home() {
             channelsInput: c.channels.join("\n"),
             message: c.message, delay: c.delay, jitter: c.jitter,
             expanded: true, editMode: false, tokenValid: null,
+            messageVariantsInput: (c.messageVariants ?? []).join("\n"),
+            sendWindowStart: c.sendWindowStart ?? "",
+            sendWindowEnd: c.sendWindowEnd ?? "",
           },
         }));
       }
@@ -646,7 +712,7 @@ export default function Home() {
   function setDraft(id: number, updates: Partial<(typeof drafts)[number]>) {
     setDrafts((p) => ({
       ...p,
-      [id]: { ...(p[id] ?? { name: "", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, expanded: true, editMode: false, tokenValid: null }), ...updates },
+      [id]: { ...(p[id] ?? { name: "", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, expanded: true, editMode: false, tokenValid: null, messageVariantsInput: "", sendWindowStart: "", sendWindowEnd: "" }), ...updates },
     }));
   }
 
@@ -687,7 +753,7 @@ export default function Home() {
           },
         });
         if (useFixed && res?.details?.length) {
-          const successes = res.details.filter((d) => d.success);
+          const successes = res.details.filter((d: { success: boolean; channelId?: string }) => d.success);
           if (successes.length > 0) {
             setFixedSentByChannel((prev) => {
               const next = { ...prev };
@@ -742,17 +808,24 @@ export default function Home() {
     } catch { setDraft(id, { tokenValid: false }); }
   };
 
+  function parseVariants(input: string): string[] {
+    return input.split("\n").map((s) => s.trim()).filter(Boolean);
+  }
+
   const handleCreateCampaign = async () => {
     if (!newForm.name || !newForm.token || !newForm.channelsInput || !newForm.message) {
       toast({ title: "Missing fields", description: "Name, token, channels, and message required.", variant: "destructive" });
       return;
     }
     const channels = newForm.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
+    const messageVariants = parseVariants(newForm.messageVariantsInput);
+    const sendWindowStart = newForm.sendWindowStart?.trim() || null;
+    const sendWindowEnd = newForm.sendWindowEnd?.trim() || null;
     try {
-      const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter });
-      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null });
+      const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, messageVariants, sendWindowStart, sendWindowEnd } as Parameters<typeof createCampaign.mutateAsync>[0]);
+      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, messageVariantsInput: newForm.messageVariantsInput, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd });
       setShowNewForm(false);
-      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0 });
+      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0, messageVariantsInput: "", sendWindowStart: "", sendWindowEnd: "" });
       toast({ title: "Campaign Created", description: created.name });
     } catch { toast({ title: "Error", description: "Failed to create campaign.", variant: "destructive" }); }
   };
@@ -761,8 +834,11 @@ export default function Home() {
     const draft = getDraft(id);
     if (!draft) return;
     const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
+    const messageVariants = parseVariants(draft.messageVariantsInput ?? "");
+    const sendWindowStart = draft.sendWindowStart?.trim() || null;
+    const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
     try {
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter });
+      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, messageVariants, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       setDraft(id, { editMode: false });
       toast({ title: "Saved", description: "Changes will take effect on next send cycle." });
     } catch { toast({ title: "Error", description: "Failed to save.", variant: "destructive" }); }
@@ -772,7 +848,10 @@ export default function Home() {
     const draft = getDraft(id);
     if (draft) {
       const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter }).catch(() => {});
+      const messageVariants = parseVariants(draft.messageVariantsInput ?? "");
+      const sendWindowStart = draft.sendWindowStart?.trim() || null;
+      const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
+      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, messageVariants, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]).catch(() => {});
     }
     try {
       await startCampaign.mutateAsync(id);
@@ -794,7 +873,7 @@ export default function Home() {
   const handleDuplicate = async (id: number) => {
     try {
       const created = await duplicateCampaign.mutateAsync(id);
-      setDraft(created.id, { name: created.name, token: created.token, channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: created.jitter, expanded: true, editMode: false, tokenValid: null });
+      setDraft(created.id, { name: created.name, token: created.token, channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: created.jitter, expanded: true, editMode: false, tokenValid: null, messageVariantsInput: (created.messageVariants ?? []).join("\n"), sendWindowStart: created.sendWindowStart ?? "", sendWindowEnd: created.sendWindowEnd ?? "" });
       toast({ title: "Campaign Duplicated", description: created.name });
     } catch { toast({ title: "Error", description: "Failed to duplicate.", variant: "destructive" }); }
   };
@@ -1138,6 +1217,25 @@ export default function Home() {
                       <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Message</Label>
                       <Textarea value={newForm.message} onChange={(e) => setNewForm((p) => ({ ...p, message: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
                     </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><ListPlus className="w-3 h-3" />Message Variants (one per line, optional)</Label>
+                      <Textarea value={newForm.messageVariantsInput} onChange={(e) => setNewForm((p) => ({ ...p, messageVariantsInput: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder={"Variant A\nVariant B\nVariant C"} />
+                      <p className="text-[10px] text-muted-foreground mt-1">When set, the scheduler picks one randomly per cycle (ignores Message above).</p>
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><Clock className="w-3 h-3" />Send Window (UTC, optional)</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground mb-1 block">From (HH:MM)</Label>
+                          <Input type="time" value={newForm.sendWindowStart} onChange={(e) => setNewForm((p) => ({ ...p, sendWindowStart: e.target.value }))} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                        </div>
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground mb-1 block">Until (HH:MM)</Label>
+                          <Input type="time" value={newForm.sendWindowEnd} onChange={(e) => setNewForm((p) => ({ ...p, sendWindowEnd: e.target.value }))} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">Leave empty to send 24/7. Overnight windows (e.g. 22:00→06:00) are supported.</p>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Interval (s)</Label>
@@ -1290,6 +1388,25 @@ export default function Home() {
                           <div>
                             <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 block">Message</Label>
                             <Textarea value={draft.message} onChange={(e) => setDraft(campaign.id, { message: e.target.value })} className="min-h-[72px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
+                          </div>
+                          <div>
+                            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><ListPlus className="w-3 h-3" />Message Variants <span className="text-primary font-mono">{parseVariants(draft.messageVariantsInput ?? "").length > 0 ? `${parseVariants(draft.messageVariantsInput ?? "").length} variants` : "off"}</span></Label>
+                            <Textarea value={draft.messageVariantsInput ?? ""} onChange={(e) => setDraft(campaign.id, { messageVariantsInput: e.target.value })} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder={"Variant A\nVariant B\nVariant C"} />
+                            <p className="text-[10px] text-muted-foreground mt-1">One per line. When set, randomly picked each cycle (overrides Message above).</p>
+                          </div>
+                          <div>
+                            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />Send Window (UTC) {(draft.sendWindowStart || draft.sendWindowEnd) && <span className="text-primary font-mono text-[9px]">{draft.sendWindowStart || "?"} → {draft.sendWindowEnd || "?"}</span>}</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-[10px] text-muted-foreground mb-1 block">From</Label>
+                                <Input type="time" value={draft.sendWindowStart ?? ""} onChange={(e) => setDraft(campaign.id, { sendWindowStart: e.target.value })} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                              </div>
+                              <div>
+                                <Label className="text-[10px] text-muted-foreground mb-1 block">Until</Label>
+                                <Input type="time" value={draft.sendWindowEnd ?? ""} onChange={(e) => setDraft(campaign.id, { sendWindowEnd: e.target.value })} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-1">Leave both empty to send 24/7.</p>
                           </div>
                           <div className="rounded-xl border border-border bg-background/30 p-3 space-y-3">
                             <div>
@@ -1613,6 +1730,101 @@ export default function Home() {
                   </div>
                 )}
               </div>
+              {/* Online Presence */}
+              <div className="rounded-xl border border-border bg-card/60 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Wifi className="w-3.5 h-3.5 text-primary" />Online Presence</h3>
+                  {presenceActive && (
+                    <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />{presenceStatus}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Keeps the account appearing online via a persistent Discord Gateway WebSocket connection. Useful for selfbot stealth — looks like a normal logged-in session.</p>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Discord Token</Label>
+                  <Input type="password" placeholder="Enter Discord user token..." value={presenceToken} onChange={(e) => setPresenceToken(e.target.value)} className="font-mono text-sm bg-input border-border rounded-xl" />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Status</Label>
+                  <div className="flex gap-2">
+                    {(["online", "idle", "dnd"] as const).map((s) => (
+                      <button key={s} onClick={() => setPresenceStatus(s)}
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-semibold border transition-colors capitalize ${presenceStatus === s ? "bg-primary/20 text-primary border-primary/40" : "bg-input border-border text-muted-foreground hover:border-primary/30"}`}>
+                        <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${s === "online" ? "bg-green-400" : s === "idle" ? "bg-amber-400" : "bg-red-400"}`} />{s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {!presenceActive ? (
+                    <Button size="sm" className="bg-primary/80 hover:bg-primary rounded-xl gap-1.5" disabled={!presenceToken || setPresenceMutation.isPending}
+                      onClick={async () => {
+                        try {
+                          await setPresenceMutation.mutateAsync({ token: presenceToken, status: presenceStatus });
+                          setPresenceActive(true);
+                          toast({ title: "Presence Active", description: `Now appearing as ${presenceStatus}` });
+                        } catch { toast({ title: "Error", description: "Failed to set presence. Check token.", variant: "destructive" }); }
+                      }}>
+                      {setPresenceMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Wifi className="w-3.5 h-3.5" />Go Online</>}
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" className="border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-xl gap-1.5" disabled={stopPresenceMutation.isPending}
+                      onClick={async () => {
+                        try {
+                          await stopPresenceMutation.mutateAsync(presenceToken);
+                          setPresenceActive(false);
+                          toast({ title: "Presence Stopped" });
+                        } catch { toast({ title: "Error", description: "Failed to stop presence.", variant: "destructive" }); }
+                      }}>
+                      {stopPresenceMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><WifiOff className="w-3.5 h-3.5" />Go Offline</>}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Warm-up Mode */}
+              <div className="rounded-xl border border-border bg-card/60 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Moon className="w-3.5 h-3.5 text-primary" />Warm-up Mode</h3>
+                  {warmupActive && (
+                    <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />Warming up
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Passive read-only activity mode for new tokens. Simulates normal browsing — reads channels, marks messages as seen — to build account history before sending campaigns.</p>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Discord Token</Label>
+                  <Input type="password" placeholder="Enter Discord user token..." value={warmupToken} onChange={(e) => setWarmupToken(e.target.value)} className="font-mono text-sm bg-input border-border rounded-xl" />
+                </div>
+                <div className="flex gap-2">
+                  {!warmupActive ? (
+                    <Button size="sm" className="bg-amber-600/80 hover:bg-amber-600 text-white rounded-xl gap-1.5" disabled={!warmupToken || startWarmupMutation.isPending}
+                      onClick={async () => {
+                        try {
+                          await startWarmupMutation.mutateAsync(warmupToken);
+                          setWarmupActive(true);
+                          toast({ title: "Warm-up Started", description: "Passive activity is now running in the background." });
+                        } catch { toast({ title: "Error", description: "Failed to start warm-up. Check token.", variant: "destructive" }); }
+                      }}>
+                      {startWarmupMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Moon className="w-3.5 h-3.5" />Start Warm-up</>}
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" className="border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-xl gap-1.5" disabled={stopWarmupMutation.isPending}
+                      onClick={async () => {
+                        try {
+                          await stopWarmupMutation.mutateAsync(warmupToken);
+                          setWarmupActive(false);
+                          toast({ title: "Warm-up Stopped" });
+                        } catch { toast({ title: "Error", description: "Failed to stop warm-up.", variant: "destructive" }); }
+                      }}>
+                      {stopWarmupMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Stop Warm-up"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
               <div className="rounded-xl border border-border bg-card/60 p-4 space-y-2">
                 <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">How to Get Your Token</h3>
                 <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed">

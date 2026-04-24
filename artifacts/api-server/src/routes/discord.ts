@@ -423,13 +423,20 @@ router.post("/auto-reply", async (req, res) => {
     return;
   }
 
-  const { token, persona, fixedMessage, triggerKeywords, maxRepliesPerUser, sentCountsByChannel, maxRepliesPerCycle } = parsed.data;
+  const { token, persona, fixedMessage, fixedMessageVariants, triggerKeywords, maxRepliesPerUser, sentCountsByChannel, maxRepliesPerCycle } = parsed.data;
   const triggers = (triggerKeywords ?? [])
     .map((k) => k.trim().toLowerCase())
     .filter((k) => k.length > 0);
   const perUserCap = typeof maxRepliesPerUser === "number" && maxRepliesPerUser > 0 ? maxRepliesPerUser : Infinity;
   const sentCounts: Record<string, number> = sentCountsByChannel ?? {};
   const cycleCap = typeof maxRepliesPerCycle === "number" && maxRepliesPerCycle > 0 ? maxRepliesPerCycle : Infinity;
+
+  // Message rotation: pick one variant at random per cycle, else fall back to fixedMessage
+  const activeVariants = (fixedMessageVariants ?? []).filter(Boolean);
+  function pickVariant(): string {
+    if (activeVariants.length > 0) return activeVariants[Math.floor(Math.random() * activeVariants.length)];
+    return fixedMessage?.trim() ?? "";
+  }
 
   try {
     // Get current user
@@ -510,7 +517,7 @@ router.post("/auto-reply", async (req, res) => {
         }
         const recipient = channel.recipients?.[0];
 
-        const fixed = fixedMessage?.trim() ?? "";
+        const fixed = pickVariant();
         let reply = fixed ? obfuscateFixed(fixed) : "";
         if (!reply) {
           const completion = await openai.chat.completions.create({
@@ -583,6 +590,49 @@ router.post("/auto-reply", async (req, res) => {
     req.log.error({ err }, "Auto-reply error");
     res.status(500).json({ replied: 0, skipped: 0, details: [] });
   }
+});
+
+router.post("/presence/start", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  const status = typeof req.body?.status === "string" ? req.body.status : "online";
+  if (!token) { res.status(400).json({ connected: false, status: null, uptimeMs: 0, sessionId: null }); return; }
+  startPresence(token, status as Parameters<typeof startPresence>[1]);
+  const info = presenceStatus(token);
+  res.json(info);
+});
+
+router.post("/presence/stop", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!token) { res.status(400).json({ connected: false, status: null, uptimeMs: 0, sessionId: null }); return; }
+  stopPresence(token);
+  res.json({ connected: false, status: null, uptimeMs: 0, sessionId: null });
+});
+
+router.post("/presence/status", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!token) { res.status(400).json({ connected: false, status: null, uptimeMs: 0, sessionId: null }); return; }
+  res.json(presenceStatus(token));
+});
+
+router.post("/warmup/start", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  const days = typeof req.body?.days === "number" ? req.body.days : 0;
+  if (!token || days <= 0) { res.status(400).json({ active: false, startedAt: 0, endsAt: 0, remainingMs: 0, ticksDone: 0, channelsBrowsed: 0, guildsOpened: 0, messagesRead: 0, lastTickAt: 0 }); return; }
+  startWarmup(token, days);
+  res.json(getWarmupState(token));
+});
+
+router.post("/warmup/stop", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!token) { res.status(400).json({ active: false, startedAt: 0, endsAt: 0, remainingMs: 0, ticksDone: 0, channelsBrowsed: 0, guildsOpened: 0, messagesRead: 0, lastTickAt: 0 }); return; }
+  stopWarmup(token);
+  res.json(getWarmupState(token));
+});
+
+router.post("/warmup/status", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!token) { res.status(400).json({ active: false, startedAt: 0, endsAt: 0, remainingMs: 0, ticksDone: 0, channelsBrowsed: 0, guildsOpened: 0, messagesRead: 0, lastTickAt: 0 }); return; }
+  res.json(getWarmupState(token));
 });
 
 router.get("/sessions", async (req, res) => {

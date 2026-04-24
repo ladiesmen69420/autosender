@@ -34,8 +34,12 @@ lib/
 
 1. **Dashboard** — Stats overview, quick actions, recent activity log
 2. **AutoSender** — Broadcast messages to multiple channels with configurable delay, jitter, repeat bypass, and saved presets
+   - **Send Window** — Restrict sending to a UTC time window per campaign (e.g. 09:00→18:00, overnight windows supported)
+   - **Message Variants/Rotation** — Multiple message variants per campaign, randomly picked each cycle
 3. **AI Reply** — Generate humanized DM replies with a custom persona, save AI reply campaigns/presets, fixed-message auto-reply mode, auto-reply scan every 60s, DM conversation browser
 4. **Tokens** — Validate Discord user tokens with live account info
+   - **Online Presence** — Keep account appearing online/idle/dnd via Discord Gateway WebSocket
+   - **Warm-up Mode** — Passive read-only activity for new tokens to build account history
 5. **Logs** — Real-time filterable activity log
 
 ## Database Schema

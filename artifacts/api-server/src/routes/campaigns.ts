@@ -27,10 +27,15 @@ function parseCampaignBody(body: Record<string, unknown>) {
   const token = typeof body.token === "string" ? body.token.trim() : "";
   const channels = Array.isArray(body.channels) ? (body.channels as string[]).filter(Boolean) : [];
   const message = typeof body.message === "string" ? body.message : "";
+  const messageVariants = Array.isArray(body.messageVariants)
+    ? (body.messageVariants as string[]).map((v) => String(v).trim()).filter(Boolean)
+    : undefined;
   const delay = typeof body.delay === "number" ? Math.max(1, body.delay) : 15;
   const jitter = typeof body.jitter === "number" ? Math.min(100, Math.max(0, body.jitter)) : 0;
   const rateLimitProtection = typeof body.rateLimitProtection === "boolean" ? body.rateLimitProtection : undefined;
-  return { name, token, channels, message, delay, jitter, rateLimitProtection };
+  const sendWindowStart = typeof body.sendWindowStart === "string" && body.sendWindowStart.trim() ? body.sendWindowStart.trim() : null;
+  const sendWindowEnd = typeof body.sendWindowEnd === "string" && body.sendWindowEnd.trim() ? body.sendWindowEnd.trim() : null;
+  return { name, token, channels, message, messageVariants, delay, jitter, rateLimitProtection, sendWindowStart, sendWindowEnd };
 }
 
 async function getSentToday(campaignId: number): Promise<number> {
@@ -97,9 +102,12 @@ router.post("/", async (req, res) => {
       token: data.token,
       channels: data.channels,
       message: data.message,
+      messageVariants: data.messageVariants ?? null,
       delay: data.delay,
       jitter: data.jitter,
       rateLimitProtection: data.rateLimitProtection ?? true,
+      sendWindowStart: data.sendWindowStart,
+      sendWindowEnd: data.sendWindowEnd,
     })
     .returning();
 
@@ -116,9 +124,12 @@ router.put("/:id", async (req, res) => {
   if (data.token) update.token = data.token;
   update.channels = data.channels;
   if (data.message) update.message = data.message;
+  update.messageVariants = data.messageVariants ?? null;
   update.delay = data.delay;
   update.jitter = data.jitter;
   if (data.rateLimitProtection !== undefined) update.rateLimitProtection = data.rateLimitProtection;
+  update.sendWindowStart = data.sendWindowStart;
+  update.sendWindowEnd = data.sendWindowEnd;
   update.consecutiveFailures = 0;
 
   const [row] = await db
@@ -159,9 +170,12 @@ router.post("/:id/duplicate", async (req, res) => {
       token: original.token,
       channels: original.channels,
       message: original.message,
+      messageVariants: original.messageVariants ?? null,
       delay: original.delay,
       jitter: original.jitter,
       rateLimitProtection: original.rateLimitProtection,
+      sendWindowStart: original.sendWindowStart,
+      sendWindowEnd: original.sendWindowEnd,
     })
     .returning();
 
