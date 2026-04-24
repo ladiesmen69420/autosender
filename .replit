@@ -65,4 +65,4 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
-VITE_CLERK_PUBLISHABLE_KEY = "pk_test_Y2hhcm1pbmctbWFybW9zZXQtNDguY2xlcmsuYWNjb3VudHMuZGV2JA"
+VITE_CLERK_PUBLISHABLE_KEY = "pk_test_YWR2YW5jZWQtbWFzdG9kb24tNDYuY2xlcmsuYWNjb3VudHMuZGV2JA"
