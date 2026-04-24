@@ -84,3 +84,14 @@ lib/
 ## Disclaimer
 
 Uses Discord user tokens (selfbot) — violates Discord ToS. Disclaimer shown prominently in UI.
+
+## Environment Setup (Completed)
+
+- **OpenAI AI Integration**: Provisioned via Replit AI Integrations (env vars: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`)
+- **Clerk Auth**: Provisioned via Replit-managed Clerk (env vars: `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`)
+- **Database**: PostgreSQL provisioned; schema pushed via `pnpm --filter @workspace/db run push`
+
+## Workflows
+
+- `Start application` — `PORT=5173 BASE_PATH=/ pnpm --filter @workspace/discord-autosender run dev` (port 5173, webview)
+- `API Server` — `PORT=8080 pnpm --filter @workspace/api-server run dev` (port 8080, console)
