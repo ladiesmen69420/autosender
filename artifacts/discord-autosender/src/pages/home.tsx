@@ -296,7 +296,7 @@ function useClearLogs() {
 function useSetPresence() {
   return useMutation({
     mutationFn: async ({ token, status }: { token: string; status: string }) => {
-      const res = await fetch(`${API}/discord/presence`, {
+      const res = await fetch(`${API}/discord/presence/start`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, status }),
       });
       if (!res.ok) throw new Error("Failed to set presence");
@@ -308,8 +308,8 @@ function useSetPresence() {
 function useStopPresence() {
   return useMutation({
     mutationFn: async (token: string) => {
-      const res = await fetch(`${API}/discord/presence`, {
-        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+      const res = await fetch(`${API}/discord/presence/stop`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
       });
       if (!res.ok) throw new Error("Failed to stop presence");
       return res.json();
@@ -319,9 +319,9 @@ function useStopPresence() {
 
 function useStartWarmup() {
   return useMutation({
-    mutationFn: async (token: string) => {
-      const res = await fetch(`${API}/discord/warmup`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+    mutationFn: async ({ token, days }: { token: string; days: number }) => {
+      const res = await fetch(`${API}/discord/warmup/start`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, days }),
       });
       if (!res.ok) throw new Error("Failed to start warmup");
       return res.json();
@@ -332,8 +332,8 @@ function useStartWarmup() {
 function useStopWarmup() {
   return useMutation({
     mutationFn: async (token: string) => {
-      const res = await fetch(`${API}/discord/warmup`, {
-        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+      const res = await fetch(`${API}/discord/warmup/stop`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
       });
       if (!res.ok) throw new Error("Failed to stop warmup");
       return res.json();
@@ -1788,7 +1788,7 @@ export default function Home() {
                     <Button size="sm" className="bg-amber-600/80 hover:bg-amber-600 text-white rounded-xl gap-1.5" disabled={!warmupToken || startWarmupMutation.isPending}
                       onClick={async () => {
                         try {
-                          await startWarmupMutation.mutateAsync(warmupToken);
+                          await startWarmupMutation.mutateAsync({ token: warmupToken, days: 7 });
                           setWarmupActive(true);
                           toast({ title: "Warm-up Started", description: "Passive activity is now running in the background." });
                         } catch { toast({ title: "Error", description: "Failed to start warm-up. Check token.", variant: "destructive" }); }
