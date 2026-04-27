@@ -341,6 +341,56 @@ function useStopWarmup() {
   });
 }
 
+type AutoReplyStatus = {
+  active: boolean;
+  scansCompleted: number;
+  repliesSent: number;
+  lastScanAt: number | null;
+  uptimeMs: number;
+  sentCountsByChannel: Record<string, number>;
+};
+
+function useAutoReplyServerStatus() {
+  return useQuery<AutoReplyStatus>({
+    queryKey: ["auto-reply-status"],
+    queryFn: async () => {
+      const res = await fetch(`${API}/auto-reply/status`);
+      if (!res.ok) throw new Error("Failed to fetch auto-reply status");
+      return res.json();
+    },
+    refetchInterval: 5000,
+  });
+}
+
+function useStartAutoReplyServer() {
+  return useMutation({
+    mutationFn: async (config: {
+      token: string; persona?: string; fixedMessage?: string; triggerKeywords?: string;
+      maxRepliesPerUser?: number; maxRepliesPerCycle?: number;
+      activeHoursStart?: number; activeHoursEnd?: number;
+      sentCountsByChannel?: Record<string, number>;
+    }) => {
+      const res = await fetch(`${API}/auto-reply/start`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config),
+      });
+      if (!res.ok) throw new Error("Failed to start auto-reply");
+      return res.json() as Promise<AutoReplyStatus>;
+    },
+  });
+}
+
+function useStopAutoReplyServer() {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API}/auto-reply/stop`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to stop auto-reply");
+      return res.json();
+    },
+  });
+}
+
 function useLocalState<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => {
     try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : initial; }
@@ -607,6 +657,9 @@ export default function Home() {
   const stopPresenceMutation = useStopPresence();
   const startWarmupMutation = useStartWarmup();
   const stopWarmupMutation = useStopWarmup();
+  const { data: autoReplyServerStatus, refetch: refetchAutoReplyStatus } = useAutoReplyServerStatus();
+  const startAutoReplyServer = useStartAutoReplyServer();
+  const stopAutoReplyServer = useStopAutoReplyServer();
 
   // User settings (synced to server)
   const { data: userSettings } = useGetUserSettings();
@@ -651,13 +704,7 @@ export default function Home() {
   const [stealthActiveHoursStart, setStealthActiveHoursStart] = useLocalState<number>("bb_stealth_hours_start", 9);
   const [stealthActiveHoursEnd, setStealthActiveHoursEnd] = useLocalState<number>("bb_stealth_hours_end", 23);
   const [dms, setDMs] = useState<DMConversation[]>([]);
-  const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
-  const autoReplyRef = useRef(autoReplyEnabled);
-  autoReplyRef.current = autoReplyEnabled;
-  const fixedSentByChannelRef = useRef(fixedSentByChannel);
-  fixedSentByChannelRef.current = fixedSentByChannel;
-  const autoReplyRunningRef = useRef(false);
-  const autoActive = autoReplyEnabled || (fixedAutoReply.trim().length > 0 && !!aiToken);
+  const autoActive = !!(autoReplyServerStatus?.active);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Load user settings from server once
@@ -717,88 +764,6 @@ export default function Home() {
     }));
   }
 
-  useEffect(() => {
-    if (!aiToken) return;
-    const useFixed = fixedAutoReply.trim().length > 0;
-    if (!autoReplyEnabled && !useFixed) return;
-    const triggers = triggerKeywordsInput
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const isActiveHour = () => {
-      const h = new Date().getHours();
-      const start = stealthActiveHoursStart;
-      const end = stealthActiveHoursEnd;
-      if (start === end) return true;
-      if (start < end) return h >= start && h < end;
-      return h >= start || h < end;
-    };
-
-    const run = async () => {
-      if (cancelled) return;
-      if (!isActiveHour()) return;
-      // Guard: never run two scans concurrently
-      if (autoReplyRunningRef.current) return;
-      autoReplyRunningRef.current = true;
-      try {
-        const res = await runAutoReplyMutation.mutateAsync({
-          data: {
-            token: aiToken,
-            persona: useFixed ? undefined : (aiPersona || undefined),
-            fixedMessage: useFixed ? fixedAutoReply : undefined,
-            triggerKeywords: triggers.length > 0 ? triggers : undefined,
-            maxRepliesPerUser: useFixed && maxFixedReplies > 0 ? maxFixedReplies : undefined,
-            // Read from ref so updates never restart the effect
-            sentCountsByChannel: useFixed && maxFixedReplies > 0 ? fixedSentByChannelRef.current : undefined,
-            maxRepliesPerCycle: stealthMaxPerCycle > 0 ? stealthMaxPerCycle : undefined,
-          },
-        });
-        if (useFixed && res?.details?.length) {
-          const successes = res.details.filter((d: { success: boolean; channelId?: string }) => d.success);
-          if (successes.length > 0) {
-            setFixedSentByChannel((prev) => {
-              const next = { ...prev };
-              for (const d of successes) {
-                next[d.channelId] = (next[d.channelId] ?? 0) + 1;
-              }
-              return next;
-            });
-          }
-        }
-      } catch {
-        // scan errors are non-fatal
-      } finally {
-        autoReplyRunningRef.current = false;
-      }
-    };
-
-    const schedule = () => {
-      if (cancelled) return;
-      // Randomized interval 75–180s with occasional 4–8 minute "human idle" gaps
-      const longBreak = Math.random() < 0.15;
-      const delay = longBreak
-        ? 240000 + Math.random() * 240000
-        : 75000 + Math.random() * 105000;
-      timer = setTimeout(async () => {
-        await run();
-        schedule();
-      }, delay);
-    };
-
-    // Small initial delay (3–8s) so enabling scanning doesn't fire instantly on mount
-    timer = setTimeout(async () => {
-      await run();
-      schedule();
-    }, 3000 + Math.random() * 5000);
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, stealthMaxPerCycle, stealthActiveHoursStart, stealthActiveHoursEnd]);
 
   const handleValidateToken = async () => {
     if (!tokenInput) return;
@@ -1524,16 +1489,50 @@ export default function Home() {
                   <div className="flex items-center justify-between pt-1">
                     <div>
                       <Label className="text-sm font-medium cursor-pointer">Auto-Reply</Label>
-                      <p className="text-[10px] text-muted-foreground">{fixedAutoReply.trim() ? "Auto-on while a fixed message is set — humanized scans (~1–3 min, with idle gaps)" : "Scan and reply to DMs with humanized AI on a randomized 1–3 min cycle"}</p>
+                      <p className="text-[10px] text-muted-foreground">Runs on the server — keeps scanning even when you close this tab. Randomized 1–3 min cycle with occasional idle gaps.</p>
                     </div>
-                    <Switch checked={autoActive} disabled={!!fixedAutoReply.trim()} onCheckedChange={(v) => {
-                      if (v && !aiToken) { toast({ title: "No token", description: "Enter a Discord token above.", variant: "destructive" }); return; }
-                      setAutoReplyEnabled(v);
-                    }} />
+                    <Switch
+                      checked={autoActive}
+                      disabled={startAutoReplyServer.isPending || stopAutoReplyServer.isPending}
+                      onCheckedChange={async (v) => {
+                        if (v) {
+                          if (!aiToken) { toast({ title: "No token", description: "Enter a Discord token above.", variant: "destructive" }); return; }
+                          try {
+                            await startAutoReplyServer.mutateAsync({
+                              token: aiToken,
+                              persona: aiPersona || undefined,
+                              fixedMessage: fixedAutoReply || undefined,
+                              triggerKeywords: triggerKeywordsInput || undefined,
+                              maxRepliesPerUser: maxFixedReplies || undefined,
+                              maxRepliesPerCycle: stealthMaxPerCycle || undefined,
+                              activeHoursStart: stealthActiveHoursStart,
+                              activeHoursEnd: stealthActiveHoursEnd,
+                              sentCountsByChannel: fixedSentByChannel,
+                            });
+                            refetchAutoReplyStatus();
+                            toast({ title: "Auto-Reply Started", description: "Scanning runs on the server — safe to close this tab." });
+                          } catch { toast({ title: "Error", description: "Failed to start auto-reply. Check token.", variant: "destructive" }); }
+                        } else {
+                          try {
+                            await stopAutoReplyServer.mutateAsync();
+                            refetchAutoReplyStatus();
+                            toast({ title: "Auto-Reply Stopped" });
+                          } catch { toast({ title: "Error", description: "Failed to stop auto-reply.", variant: "destructive" }); }
+                        }
+                      }}
+                    />
                   </div>
-                  {autoActive && (
-                    <div className="flex items-center gap-2 text-xs text-green-400 bg-green-400/5 border border-green-400/20 rounded-xl px-3 py-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />Active — humanized scans {fixedAutoReply.trim() ? "(fixed message)" : "(AI)"}
+                  {autoActive && autoReplyServerStatus && (
+                    <div className="flex flex-col gap-1.5 text-xs text-green-400 bg-green-400/5 border border-green-400/20 rounded-xl px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                        <span className="font-medium">Running on server {fixedAutoReply.trim() ? "(fixed message)" : "(AI)"}</span>
+                      </div>
+                      <div className="flex gap-3 text-[10px] text-green-400/70 font-mono">
+                        <span>{autoReplyServerStatus.scansCompleted} scans</span>
+                        <span>{autoReplyServerStatus.repliesSent} replies sent</span>
+                        {autoReplyServerStatus.uptimeMs > 0 && <span>up {Math.floor(autoReplyServerStatus.uptimeMs / 60000)}m</span>}
+                      </div>
                     </div>
                   )}
                   {selectedAiReplyCampaignId && (
@@ -1570,8 +1569,9 @@ export default function Home() {
                     <p className="text-[10px] text-muted-foreground mt-1.5">When set, only DMs whose last message contains one of these words/phrases (case-insensitive) will be replied to. Leave empty to reply to all pending DMs.</p>
                   </div>
                   {(() => {
-                    const channelEntries = Object.entries(fixedSentByChannel);
-                    const totalSent = channelEntries.reduce((s, [, n]) => s + n, 0);
+                    const serverCounts = autoReplyServerStatus?.sentCountsByChannel ?? fixedSentByChannel;
+                    const channelEntries = Object.entries(serverCounts);
+                    const totalSent = autoReplyServerStatus?.repliesSent ?? channelEntries.reduce((s, [, n]) => s + n, 0);
                     const peopleReached = channelEntries.filter(([, n]) => n > 0).length;
                     const cappedPeople = maxFixedReplies > 0 ? channelEntries.filter(([, n]) => n >= maxFixedReplies).length : 0;
                     return (
@@ -1595,7 +1595,18 @@ export default function Home() {
                                 value={`${totalSent} sends · ${peopleReached} people${cappedPeople > 0 ? ` · ${cappedPeople} capped` : ""}`}
                                 className="text-sm bg-input border-border rounded-xl font-mono"
                               />
-                              <Button size="sm" variant="outline" className="h-9 text-xs border-border hover:border-primary/40 rounded-xl shrink-0" onClick={() => setFixedSentByChannel({})}>
+                              <Button size="sm" variant="outline" className="h-9 text-xs border-border hover:border-primary/40 rounded-xl shrink-0" onClick={() => {
+                                setFixedSentByChannel({});
+                                if (autoActive) {
+                                  startAutoReplyServer.mutate({
+                                    token: aiToken, persona: aiPersona || undefined,
+                                    fixedMessage: fixedAutoReply || undefined, triggerKeywords: triggerKeywordsInput || undefined,
+                                    maxRepliesPerUser: maxFixedReplies || undefined, maxRepliesPerCycle: stealthMaxPerCycle || undefined,
+                                    activeHoursStart: stealthActiveHoursStart, activeHoursEnd: stealthActiveHoursEnd,
+                                    sentCountsByChannel: {},
+                                  });
+                                }
+                              }}>
                                 Reset
                               </Button>
                             </div>

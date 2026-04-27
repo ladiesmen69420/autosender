@@ -5,6 +5,7 @@ import campaignsRouter from "./campaigns";
 import userSettingsRouter from "./user-settings";
 import authRouter from "./auth";
 import aiReplyCampaignsRouter from "./ai-reply-campaigns";
+import autoReplyRouter from "./auto-reply";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use("/discord", discordRouter);
 router.use("/campaigns", campaignsRouter);
 router.use("/ai-reply-campaigns", aiReplyCampaignsRouter);
 router.use("/user-settings", userSettingsRouter);
+router.use("/auto-reply", autoReplyRouter);
 
 export default router;

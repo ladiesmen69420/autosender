@@ -22,3 +22,4 @@ export * from "./campaigns";
 export * from "./campaign-logs";
 export * from "./user-settings";
 export * from "./ai-reply-campaigns";
+export * from "./auto-reply-sessions";
