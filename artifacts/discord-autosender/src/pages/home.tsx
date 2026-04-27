@@ -654,6 +654,9 @@ export default function Home() {
   const [autoReplyEnabled, setAutoReplyEnabled] = useLocalState("bb_auto_reply", false);
   const autoReplyRef = useRef(autoReplyEnabled);
   autoReplyRef.current = autoReplyEnabled;
+  const fixedSentByChannelRef = useRef(fixedSentByChannel);
+  fixedSentByChannelRef.current = fixedSentByChannel;
+  const autoReplyRunningRef = useRef(false);
   const autoActive = autoReplyEnabled || (fixedAutoReply.trim().length > 0 && !!aiToken);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
@@ -729,15 +732,17 @@ export default function Home() {
       const h = new Date().getHours();
       const start = stealthActiveHoursStart;
       const end = stealthActiveHoursEnd;
-      if (start === end) return true; // disabled / always on
+      if (start === end) return true;
       if (start < end) return h >= start && h < end;
-      // overnight window (e.g. 22 → 6)
       return h >= start || h < end;
     };
 
     const run = async () => {
       if (cancelled) return;
       if (!isActiveHour()) return;
+      // Guard: never run two scans concurrently
+      if (autoReplyRunningRef.current) return;
+      autoReplyRunningRef.current = true;
       try {
         const res = await runAutoReplyMutation.mutateAsync({
           data: {
@@ -746,7 +751,8 @@ export default function Home() {
             fixedMessage: useFixed ? fixedAutoReply : undefined,
             triggerKeywords: triggers.length > 0 ? triggers : undefined,
             maxRepliesPerUser: useFixed && maxFixedReplies > 0 ? maxFixedReplies : undefined,
-            sentCountsByChannel: useFixed && maxFixedReplies > 0 ? fixedSentByChannel : undefined,
+            // Read from ref so updates never restart the effect
+            sentCountsByChannel: useFixed && maxFixedReplies > 0 ? fixedSentByChannelRef.current : undefined,
             maxRepliesPerCycle: stealthMaxPerCycle > 0 ? stealthMaxPerCycle : undefined,
           },
         });
@@ -762,7 +768,11 @@ export default function Home() {
             });
           }
         }
-      } catch {}
+      } catch {
+        // scan errors are non-fatal
+      } finally {
+        autoReplyRunningRef.current = false;
+      }
     };
 
     const schedule = () => {
@@ -778,13 +788,17 @@ export default function Home() {
       }, delay);
     };
 
-    run();
-    schedule();
+    // Small initial delay (3–8s) so enabling scanning doesn't fire instantly on mount
+    timer = setTimeout(async () => {
+      await run();
+      schedule();
+    }, 3000 + Math.random() * 5000);
+
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, fixedSentByChannel, setFixedSentByChannel, stealthMaxPerCycle, stealthActiveHoursStart, stealthActiveHoursEnd]);
+  }, [autoReplyEnabled, aiToken, aiPersona, fixedAutoReply, triggerKeywordsInput, maxFixedReplies, stealthMaxPerCycle, stealthActiveHoursStart, stealthActiveHoursEnd]);
 
   const handleValidateToken = async () => {
     if (!tokenInput) return;
