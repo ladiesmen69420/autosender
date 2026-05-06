@@ -596,7 +596,8 @@ router.post("/presence/start", async (req, res) => {
   const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
   const status = typeof req.body?.status === "string" ? req.body.status : "online";
   if (!token) { res.status(400).json({ connected: false, status: null, uptimeMs: 0, sessionId: null }); return; }
-  startPresence(token, status as Parameters<typeof startPresence>[1]);
+  const normalizedStatus = ["online", "idle", "dnd", "invisible"].includes(status) ? status : "online";
+  startPresence(token, normalizedStatus as Parameters<typeof startPresence>[1]);
   const info = presenceStatus(token);
   res.json(info);
 });

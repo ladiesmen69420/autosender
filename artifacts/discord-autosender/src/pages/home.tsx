@@ -684,6 +684,21 @@ export default function Home() {
   const [presenceToken, setPresenceToken] = useLocalState("bb_presence_token", "");
   const [presenceStatus, setPresenceStatus] = useLocalState<"online" | "idle" | "dnd">("bb_presence_status", "online");
   const [presenceActive, setPresenceActive] = useState(false);
+  const { data: presenceServerStatus, refetch: refetchPresenceStatus } = useQuery<{ connected: boolean; status: "online" | "idle" | "dnd" | null }>({
+    queryKey: ["presence-status", presenceToken],
+    queryFn: async () => {
+      if (!presenceToken) return { connected: false, status: null };
+      const res = await fetch(`${API}/discord/presence/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: presenceToken }),
+      });
+      if (!res.ok) return { connected: false, status: null };
+      return res.json();
+    },
+    enabled: !!presenceToken,
+    refetchInterval: presenceToken ? 5000 : false,
+  });
   const [warmupToken, setWarmupToken] = useLocalState("bb_warmup_token", "");
   const [warmupActive, setWarmupActive] = useState(false);
 
@@ -755,6 +770,13 @@ export default function Home() {
       }
     });
   }, [campaigns.map((c) => c.id).join(",")]);
+
+  useEffect(() => {
+    setPresenceActive(!!presenceServerStatus?.connected);
+    if (presenceServerStatus?.status && ["online", "idle", "dnd"].includes(presenceServerStatus.status)) {
+      setPresenceStatus(presenceServerStatus.status);
+    }
+  }, [presenceServerStatus?.connected, presenceServerStatus?.status]);
 
   function getDraft(id: number) { return drafts[id] ?? null; }
   function setDraft(id: number, updates: Partial<(typeof drafts)[number]>) {
@@ -1773,6 +1795,7 @@ export default function Home() {
                         try {
                           await setPresenceMutation.mutateAsync({ token: presenceToken, status: presenceStatus });
                           setPresenceActive(true);
+                          await refetchPresenceStatus();
                           toast({ title: "Presence Active", description: `Now appearing as ${presenceStatus}` });
                         } catch { toast({ title: "Error", description: "Failed to set presence. Check token.", variant: "destructive" }); }
                       }}>
@@ -1784,6 +1807,7 @@ export default function Home() {
                         try {
                           await stopPresenceMutation.mutateAsync(presenceToken);
                           setPresenceActive(false);
+                          await refetchPresenceStatus();
                           toast({ title: "Presence Stopped" });
                         } catch { toast({ title: "Error", description: "Failed to stop presence.", variant: "destructive" }); }
                       }}>
