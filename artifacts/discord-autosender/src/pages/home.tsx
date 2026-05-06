@@ -1207,7 +1207,7 @@ export default function Home() {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Interval (s)</Label>
-                        <Input type="number" min="1" value={newForm.delay} onChange={(e) => setNewForm((p) => ({ ...p, delay: Math.max(1, Number(e.target.value)) }))} className="h-8 font-mono bg-input border-border rounded-xl" />
+                        <Input type="number" min="1" max="18000" value={newForm.delay} onChange={(e) => setNewForm((p) => ({ ...p, delay: Math.min(18000, Math.max(1, Number(e.target.value))) }))} className="h-8 font-mono bg-input border-border rounded-xl" />
                       </div>
                       <div>
                         <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center justify-between"><span>Jitter</span><span className="text-primary">{newForm.jitter}%</span></Label>
@@ -1377,7 +1377,7 @@ export default function Home() {
                                 <Clock className="w-3 h-3" />Interval (s)
                                 {campaign.rateLimitBonus > 0 && <span className="text-amber-400 text-[9px]">→ {displayDelay}s effective</span>}
                               </Label>
-                              <Input type="number" min="1" value={draft.delay} onChange={(e) => setDraft(campaign.id, { delay: Math.max(1, Number(e.target.value)) })} className="h-8 font-mono bg-input border-border rounded-xl" />
+                              <Input type="number" min="1" max="18000" value={draft.delay} onChange={(e) => setDraft(campaign.id, { delay: Math.min(18000, Math.max(1, Number(e.target.value))) })} className="h-8 font-mono bg-input border-border rounded-xl" />
                             </div>
                             <div>
                               <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center justify-between">

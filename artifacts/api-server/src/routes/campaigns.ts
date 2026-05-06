@@ -30,7 +30,7 @@ function parseCampaignBody(body: Record<string, unknown>) {
   const messageVariants = Array.isArray(body.messageVariants)
     ? (body.messageVariants as string[]).map((v) => String(v).trim()).filter(Boolean)
     : undefined;
-  const delay = typeof body.delay === "number" ? Math.max(1, body.delay) : 15;
+  const delay = typeof body.delay === "number" ? Math.min(18000, Math.max(1, body.delay)) : 15;
   const jitter = typeof body.jitter === "number" ? Math.min(100, Math.max(0, body.jitter)) : 0;
   const rateLimitProtection = typeof body.rateLimitProtection === "boolean" ? body.rateLimitProtection : undefined;
   const sendWindowStart = typeof body.sendWindowStart === "string" && body.sendWindowStart.trim() ? body.sendWindowStart.trim() : null;
