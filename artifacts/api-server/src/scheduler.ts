@@ -12,6 +12,7 @@ const rotationQueue: number[] = [];   // campaign IDs in rotation order
 let rotationCursor = 0;               // next index to fire
 let rotationActive = false;
 let rotationTimer: ReturnType<typeof setTimeout> | null = null;
+const nextRunAt = new Map<number, number>();
 
 // Per-campaign bookkeeping for stats / UI
 const sendCounts    = new Map<number, number>();
@@ -280,6 +281,11 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
   return { nextMs, remove: false };
 }
 
+function scheduleNextRotationStep(delayMs: number): void {
+  if (rotationTimer) clearTimeout(rotationTimer);
+  rotationTimer = setTimeout(runRotationStep, Math.max(0, delayMs));
+}
+
 /* ─── Rotation loop ──────────────────────────────────────────────────────── */
 async function runRotationStep(): Promise<void> {
   if (rotationQueue.length === 0) {
@@ -306,6 +312,7 @@ async function runRotationStep(): Promise<void> {
     }
     sendCounts.delete(id);
     nextSendTimes.delete(id);
+    nextRunAt.delete(id);
 
     if (rotationQueue.length === 0) {
       rotationActive = false;
@@ -317,17 +324,18 @@ async function runRotationStep(): Promise<void> {
     return;
   }
 
-  // Estimate when this campaign will fire again (after a full rotation cycle)
-  const queueLen = Math.max(1, rotationQueue.length);
-  nextSendTimes.set(id, new Date(Date.now() + nextMs * queueLen));
-
-  rotationTimer = setTimeout(runRotationStep, nextMs);
+  const now = Date.now();
+  const targetAt = nextRunAt.get(id) ?? now + nextMs;
+  nextRunAt.set(id, targetAt + nextMs);
+  nextSendTimes.set(id, new Date(targetAt));
+  scheduleNextRotationStep(Math.max(0, targetAt - now));
 }
 
 /* ─── Public API ─────────────────────────────────────────────────────────── */
 export function startCampaignSchedule(id: number): void {
   if (!rotationQueue.includes(id)) {
     rotationQueue.push(id);
+    nextRunAt.set(id, Date.now());
     logger.info({ campaignId: id, queueLength: rotationQueue.length }, "Campaign added to rotation");
   }
   if (!rotationActive) {
@@ -345,6 +353,7 @@ export function stopCampaignSchedule(id: number): void {
   }
   sendCounts.delete(id);
   nextSendTimes.delete(id);
+  nextRunAt.delete(id);
 
   // If queue is now empty, cancel the timer
   if (rotationQueue.length === 0 && rotationTimer) {
