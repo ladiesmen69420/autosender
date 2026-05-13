@@ -35,7 +35,8 @@ function parseCampaignBody(body: Record<string, unknown>) {
   const rateLimitProtection = typeof body.rateLimitProtection === "boolean" ? body.rateLimitProtection : undefined;
   const sendWindowStart = typeof body.sendWindowStart === "string" && body.sendWindowStart.trim() ? body.sendWindowStart.trim() : null;
   const sendWindowEnd = typeof body.sendWindowEnd === "string" && body.sendWindowEnd.trim() ? body.sendWindowEnd.trim() : null;
-  return { name, token, channels, message, messageVariants, delay, jitter, rateLimitProtection, sendWindowStart, sendWindowEnd };
+  const rotateEnabled = typeof body.rotateEnabled === "boolean" ? body.rotateEnabled : true;
+  return { name, token, channels, message, messageVariants, delay, jitter, rateLimitProtection, sendWindowStart, sendWindowEnd, rotateEnabled };
 }
 
 async function getSentToday(campaignId: number): Promise<number> {
@@ -108,6 +109,7 @@ router.post("/", async (req, res) => {
       rateLimitProtection: data.rateLimitProtection ?? true,
       sendWindowStart: data.sendWindowStart,
       sendWindowEnd: data.sendWindowEnd,
+      rotateEnabled: data.rotateEnabled,
     })
     .returning();
 
@@ -130,6 +132,7 @@ router.put("/:id", async (req, res) => {
   if (data.rateLimitProtection !== undefined) update.rateLimitProtection = data.rateLimitProtection;
   update.sendWindowStart = data.sendWindowStart;
   update.sendWindowEnd = data.sendWindowEnd;
+  update.rotateEnabled = data.rotateEnabled;
   update.consecutiveFailures = 0;
 
   const [row] = await db
@@ -188,7 +191,7 @@ router.post("/:id/start", async (req, res) => {
 
   const [row] = await db
     .update(campaignsTable)
-    .set({ running: true, consecutiveFailures: 0 })
+    .set({ running: true, consecutiveFailures: 0, rotateEnabled: true })
     .where(eq(campaignsTable.id, id))
     .returning();
 

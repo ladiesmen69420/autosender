@@ -14,6 +14,7 @@ export const campaignsTable = pgTable("campaigns", {
   jitter: integer("jitter").notNull().default(0),
   sendWindowStart: text("send_window_start"),
   sendWindowEnd: text("send_window_end"),
+  rotateEnabled: boolean("rotate_enabled").notNull().default(true),
   running: boolean("running").notNull().default(false),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),

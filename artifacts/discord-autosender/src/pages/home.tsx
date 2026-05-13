@@ -40,6 +40,7 @@ type ServerCampaign = {
   lastSentAt: string | null; createdAt: string; consecutiveFailures: number;
   sendWindowStart: string | null;
   sendWindowEnd: string | null;
+  rotateEnabled: boolean;
 };
 
 type CampaignLog = {
@@ -672,10 +673,11 @@ export default function Home() {
     name: string; token: string; channelsInput: string; message: string;
     delay: number; jitter: number; expanded: boolean; editMode: boolean; tokenValid: boolean | null;
     sendWindowStart: string; sendWindowEnd: string;
+    rotateEnabled: boolean;
   }>>("bb_drafts", {});
 
   const [showNewForm, setShowNewForm] = useState(false);
-  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "" });
+  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
 
   const [tokenInput, setTokenInput] = useLocalState("bb_token_input", "");
   const [tokenInfo, setTokenInfo] = useLocalState<TokenValidationResult | null>("bb_token_info", null);
@@ -762,7 +764,7 @@ export default function Home() {
             name: c.name, token: c.token,
             channelsInput: c.channels.join("\n"),
             message: c.message, delay: c.delay, jitter: c.jitter,
-            expanded: true, editMode: false, tokenValid: null,
+            expanded: true, editMode: false, tokenValid: null, rotateEnabled: c.rotateEnabled,
             sendWindowStart: c.sendWindowStart ?? "",
             sendWindowEnd: c.sendWindowEnd ?? "",
           },
@@ -782,7 +784,7 @@ export default function Home() {
   function setDraft(id: number, updates: Partial<(typeof drafts)[number]>) {
     setDrafts((p) => ({
       ...p,
-      [id]: { ...(p[id] ?? { name: "", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, expanded: true, editMode: false, tokenValid: null, sendWindowStart: "", sendWindowEnd: "" }), ...updates },
+      [id]: { ...(p[id] ?? { name: "", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, expanded: true, editMode: false, tokenValid: null, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true }), ...updates },
     }));
   }
 
@@ -816,10 +818,10 @@ export default function Home() {
     const sendWindowStart = newForm.sendWindowStart?.trim() || null;
     const sendWindowEnd = newForm.sendWindowEnd?.trim() || null;
     try {
-      const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, sendWindowStart, sendWindowEnd } as Parameters<typeof createCampaign.mutateAsync>[0]);
-      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd });
+      const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: newForm.rotateEnabled } as Parameters<typeof createCampaign.mutateAsync>[0]);
+      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd, rotateEnabled: newForm.rotateEnabled });
       setShowNewForm(false);
-      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "" });
+      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
       toast({ title: "Campaign Created", description: created.name });
     } catch { toast({ title: "Error", description: "Failed to create campaign.", variant: "destructive" }); }
   };
@@ -831,7 +833,7 @@ export default function Home() {
     const sendWindowStart = draft.sendWindowStart?.trim() || null;
     const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
     try {
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       setDraft(id, { editMode: false });
       toast({ title: "Saved", description: "Changes will take effect on next send cycle." });
     } catch { toast({ title: "Error", description: "Failed to save.", variant: "destructive" }); }
@@ -843,7 +845,7 @@ export default function Home() {
       const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
       const sendWindowStart = draft.sendWindowStart?.trim() || null;
       const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd } as Parameters<typeof updateCampaign.mutateAsync>[0]).catch(() => {});
+      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]).catch(() => {});
     }
     try {
       await startCampaign.mutateAsync(id);
@@ -865,7 +867,7 @@ export default function Home() {
   const handleDuplicate = async (id: number) => {
     try {
       const created = await duplicateCampaign.mutateAsync(id);
-      setDraft(created.id, { name: created.name, token: created.token, channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: created.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: created.sendWindowStart ?? "", sendWindowEnd: created.sendWindowEnd ?? "" });
+      setDraft(created.id, { name: created.name, token: created.token, channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: created.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: created.sendWindowStart ?? "", sendWindowEnd: created.sendWindowEnd ?? "", rotateEnabled: created.rotateEnabled });
       toast({ title: "Campaign Duplicated", description: created.name });
     } catch { toast({ title: "Error", description: "Failed to duplicate.", variant: "destructive" }); }
   };
@@ -1414,6 +1416,10 @@ export default function Home() {
                             <div>✓ Human-like delays 0.6–2.5s between channels</div>
                             <div>✓ Burst break every 15 cycles (+30–90s pause)</div>
                             <div>✓ Campaigns send in round-robin rotation — one at a time</div>
+                            <div className="flex items-center justify-between gap-3 pt-1">
+                              <span>Include in rotation</span>
+                              <Switch checked={draft.rotateEnabled} onCheckedChange={(v) => setDraft(campaign.id, { rotateEnabled: v })} />
+                            </div>
                           </div>
                           <Button size="sm" variant="default" className="w-full h-8 text-xs bg-primary/80 hover:bg-primary rounded-xl"
                             onClick={() => handleSaveCampaign(campaign.id)} disabled={updateCampaign.isPending}>

@@ -383,3 +383,13 @@ export async function initScheduler(): Promise<void> {
 
   logger.info({ count: running.length }, "Scheduler initialized");
 }
+
+export async function syncRotationCampaigns(): Promise<void> {
+  const rows = await db
+    .select({ id: campaignsTable.id, running: campaignsTable.running, rotateEnabled: campaignsTable.rotateEnabled })
+    .from(campaignsTable);
+  for (const row of rows) {
+    if (row.running && row.rotateEnabled) startCampaignSchedule(row.id);
+    else stopCampaignSchedule(row.id);
+  }
+}
