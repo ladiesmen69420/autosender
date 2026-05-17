@@ -180,7 +180,15 @@ function useCreateCampaign() {
   return useMutation({
     mutationFn: async (data: { name: string; token: string; channels: string[]; message: string; delay: number; jitter: number }) => {
       const res = await fetch(`${API}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-      if (!res.ok) throw new Error("Failed to create");
+      if (!res.ok) {
+        let msg = "Failed to create campaign";
+        try {
+          const body = await res.json() as { error?: string; details?: string };
+          if (body.details) msg = body.details;
+          else if (body.error) msg = body.error;
+        } catch { /* ignore parse error, use default msg */ }
+        throw new Error(msg);
+      }
       return res.json() as Promise<ServerCampaign>;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
@@ -837,7 +845,7 @@ export default function Home() {
       setShowNewForm(false);
       setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
       toast({ title: "Campaign Created", description: created.name });
-    } catch { toast({ title: "Error", description: "Failed to create campaign.", variant: "destructive" }); }
+    } catch (err) { toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to create campaign.", variant: "destructive" }); }
   };
 
   const handleSaveCampaign = async (id: number) => {

@@ -90,30 +90,49 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   const userId = getUserId(req);
   const data = parseCampaignBody(req.body as Record<string, unknown>);
-  if (!data.name || !data.token || !data.message) {
-    res.status(400).json({ error: "name, token, and message are required" });
+
+  if (!data.name) {
+    res.status(400).json({ error: "Validation failed", details: "Campaign name is required." });
+    return;
+  }
+  if (!data.token) {
+    res.status(400).json({ error: "Validation failed", details: "Discord token is required." });
+    return;
+  }
+  if (!data.message) {
+    res.status(400).json({ error: "Validation failed", details: "Message is required." });
+    return;
+  }
+  if (!Array.isArray(data.channels) || data.channels.length === 0) {
+    res.status(400).json({ error: "Validation failed", details: "At least one channel ID is required." });
     return;
   }
 
-  const [row] = await db
-    .insert(campaignsTable)
-    .values({
-      userId,
-      name: data.name,
-      token: data.token,
-      channels: data.channels,
-      message: data.message,
-      messageVariants: data.messageVariants ?? null,
-      delay: data.delay,
-      jitter: data.jitter,
-      rateLimitProtection: data.rateLimitProtection ?? true,
-      sendWindowStart: data.sendWindowStart,
-      sendWindowEnd: data.sendWindowEnd,
-      rotateEnabled: data.rotateEnabled,
-    })
-    .returning();
+  try {
+    const [row] = await db
+      .insert(campaignsTable)
+      .values({
+        userId,
+        name: data.name,
+        token: data.token,
+        channels: data.channels,
+        message: data.message,
+        messageVariants: data.messageVariants ?? null,
+        delay: data.delay,
+        jitter: data.jitter,
+        rateLimitProtection: data.rateLimitProtection ?? true,
+        sendWindowStart: data.sendWindowStart,
+        sendWindowEnd: data.sendWindowEnd,
+        rotateEnabled: data.rotateEnabled,
+      })
+      .returning();
 
-  res.status(201).json(serializeCampaign(row, 0));
+    res.status(201).json(serializeCampaign(row, 0));
+  } catch (err) {
+    const safeMessage = err instanceof Error ? err.message.replace(/token[^,]*/gi, "[redacted]") : "Unknown database error";
+    req.log.error({ campaignName: data.name, channelCount: data.channels.length }, "Failed to insert campaign");
+    res.status(500).json({ error: "Failed to create campaign", details: safeMessage });
+  }
 });
 
 router.put("/:id", async (req, res) => {
