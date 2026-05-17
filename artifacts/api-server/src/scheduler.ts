@@ -123,12 +123,16 @@ function parseHHMM(s: string | null | undefined): number | null {
   return h * 60 + min;
 }
 
+function getSgtMinutesNow(): number {
+  const now = new Date();
+  return ((now.getUTCHours() + 8) % 24) * 60 + now.getUTCMinutes();
+}
+
 function isWithinSendWindow(start: string | null | undefined, end: string | null | undefined): boolean {
   const startMin = parseHHMM(start);
   const endMin   = parseHHMM(end);
   if (startMin === null || endMin === null) return true; // no window = always active
-  const now        = new Date();
-  const currentMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const currentMin = getSgtMinutesNow();
   if (startMin <= endMin) return currentMin >= startMin && currentMin < endMin;
   // wraps midnight: e.g. 22:00 → 06:00
   return currentMin >= startMin || currentMin < endMin;
@@ -137,8 +141,7 @@ function isWithinSendWindow(start: string | null | undefined, end: string | null
 function minutesUntilWindowOpen(start: string | null | undefined): number {
   const startMin = parseHHMM(start);
   if (startMin === null) return 0;
-  const now        = new Date();
-  const currentMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const currentMin = getSgtMinutesNow();
   const diff       = startMin - currentMin;
   return diff > 0 ? diff : diff + 24 * 60;
 }
@@ -166,7 +169,7 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     await writeLog(
       id,
       "warning",
-      `Outside send window (${campaign.sendWindowStart}–${campaign.sendWindowEnd} UTC) — skipping this rotation`,
+      `Outside send window (${campaign.sendWindowStart}–${campaign.sendWindowEnd} SGT) — skipping this rotation`,
       undefined,
       `${waitMins} min until window opens`,
     );

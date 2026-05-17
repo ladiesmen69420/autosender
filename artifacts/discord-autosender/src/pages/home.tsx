@@ -1237,7 +1237,7 @@ export default function Home() {
                       <Textarea value={newForm.message} onChange={(e) => setNewForm((p) => ({ ...p, message: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
                     </div>
                     <div>
-                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><Clock className="w-3 h-3" />Send Window (UTC, optional, 12-hour)</Label>
+                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><Clock className="w-3 h-3" />Send Window (SGT, optional, 12-hour)</Label>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <Label className="text-[10px] text-muted-foreground mb-1 block">From (12-hour)</Label>
@@ -1404,7 +1404,7 @@ export default function Home() {
                             <Textarea value={draft.message} onChange={(e) => setDraft(campaign.id, { message: e.target.value })} className="min-h-[72px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
                           </div>
                           <div>
-                            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />Send Window (UTC, 12-hour) {(draft.sendWindowStart || draft.sendWindowEnd) && <span className="text-primary font-mono text-[9px]">{draft.sendWindowStart || "?"} → {draft.sendWindowEnd || "?"}</span>}</Label>
+                            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />Send Window (SGT, 12-hour) {(draft.sendWindowStart || draft.sendWindowEnd) && <span className="text-primary font-mono text-[9px]">{draft.sendWindowStart || "?"} → {draft.sendWindowEnd || "?"}</span>}</Label>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <Label className="text-[10px] text-muted-foreground mb-1 block">From</Label>
@@ -1711,7 +1711,7 @@ export default function Home() {
                       </div>
                     </div>
                     <p className="text-[10px] text-muted-foreground">
-                      Scanning only runs between these hours in your local timezone. Set both to the same value to run 24/7.
+                      Scanning only runs between these hours in SGT. Set both to the same value to run 24/7.
                     </p>
                   </div>
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
