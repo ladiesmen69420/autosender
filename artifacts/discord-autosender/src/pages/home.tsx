@@ -1225,18 +1225,18 @@ export default function Home() {
                       <Textarea value={newForm.message} onChange={(e) => setNewForm((p) => ({ ...p, message: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
                     </div>
                     <div>
-                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><Clock className="w-3 h-3" />Send Window (UTC, optional)</Label>
+                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1.5 block"><Clock className="w-3 h-3" />Send Window (UTC, optional, 12-hour)</Label>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <Label className="text-[10px] text-muted-foreground mb-1 block">From (HH:MM)</Label>
-                          <Input type="time" value={newForm.sendWindowStart} onChange={(e) => setNewForm((p) => ({ ...p, sendWindowStart: e.target.value }))} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                          <Label className="text-[10px] text-muted-foreground mb-1 block">From (12-hour)</Label>
+                          <Input type="text" inputMode="text" placeholder="9:00 AM" value={newForm.sendWindowStart} onChange={(e) => setNewForm((p) => ({ ...p, sendWindowStart: e.target.value }))} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
                         </div>
                         <div>
-                          <Label className="text-[10px] text-muted-foreground mb-1 block">Until (HH:MM)</Label>
-                          <Input type="time" value={newForm.sendWindowEnd} onChange={(e) => setNewForm((p) => ({ ...p, sendWindowEnd: e.target.value }))} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                          <Label className="text-[10px] text-muted-foreground mb-1 block">Until (12-hour)</Label>
+                          <Input type="text" inputMode="text" placeholder="5:00 PM" value={newForm.sendWindowEnd} onChange={(e) => setNewForm((p) => ({ ...p, sendWindowEnd: e.target.value }))} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
                         </div>
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">Leave empty to send 24/7. Overnight windows (e.g. 22:00→06:00) are supported.</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">Use times like 9:00 AM or 5:30 PM. Leave empty to send 24/7.</p>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1392,18 +1392,18 @@ export default function Home() {
                             <Textarea value={draft.message} onChange={(e) => setDraft(campaign.id, { message: e.target.value })} className="min-h-[72px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
                           </div>
                           <div>
-                            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />Send Window (UTC) {(draft.sendWindowStart || draft.sendWindowEnd) && <span className="text-primary font-mono text-[9px]">{draft.sendWindowStart || "?"} → {draft.sendWindowEnd || "?"}</span>}</Label>
+                            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5"><Clock className="w-3 h-3" />Send Window (UTC, 12-hour) {(draft.sendWindowStart || draft.sendWindowEnd) && <span className="text-primary font-mono text-[9px]">{draft.sendWindowStart || "?"} → {draft.sendWindowEnd || "?"}</span>}</Label>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <Label className="text-[10px] text-muted-foreground mb-1 block">From</Label>
-                                <Input type="time" value={draft.sendWindowStart ?? ""} onChange={(e) => setDraft(campaign.id, { sendWindowStart: e.target.value })} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                                <Input type="text" inputMode="text" placeholder="9:00 AM" value={draft.sendWindowStart ?? ""} onChange={(e) => setDraft(campaign.id, { sendWindowStart: e.target.value })} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
                               </div>
                               <div>
                                 <Label className="text-[10px] text-muted-foreground mb-1 block">Until</Label>
-                                <Input type="time" value={draft.sendWindowEnd ?? ""} onChange={(e) => setDraft(campaign.id, { sendWindowEnd: e.target.value })} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
+                                <Input type="text" inputMode="text" placeholder="5:00 PM" value={draft.sendWindowEnd ?? ""} onChange={(e) => setDraft(campaign.id, { sendWindowEnd: e.target.value })} className="h-8 font-mono text-xs bg-input border-border rounded-xl" />
                               </div>
                             </div>
-                            <p className="text-[10px] text-muted-foreground mt-1">Leave both empty to send 24/7.</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">Use times like 9:00 AM or 5:30 PM. Leave both empty to send 24/7.</p>
                           </div>
                           <div className="rounded-xl border border-border bg-background/30 p-3 space-y-3">
                             <div>
@@ -1676,7 +1676,7 @@ export default function Home() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Active From (hour)</Label>
+                        <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Active From (12-hour)</Label>
                         <Input
                           type="number"
                           min={0}
@@ -1687,7 +1687,7 @@ export default function Home() {
                         />
                       </div>
                       <div>
-                        <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Active Until (hour)</Label>
+                        <Label className="text-[10px] text-muted-foreground mb-1.5 block uppercase tracking-widest">Active Until (12-hour)</Label>
                         <Input
                           type="number"
                           min={0}
@@ -1699,7 +1699,7 @@ export default function Home() {
                       </div>
                     </div>
                     <p className="text-[10px] text-muted-foreground">
-                      Scanning only runs between these hours in your local timezone (overnight windows like 22→6 are supported). Set both to the same value to run 24/7.
+                      Scanning only runs between these hours in your local timezone. Set both to the same value to run 24/7.
                     </p>
                   </div>
                   <p className="text-[10px] text-muted-foreground leading-relaxed">

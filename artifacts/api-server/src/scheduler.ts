@@ -106,7 +106,16 @@ export async function doSend(
 /* ─── Send window helpers ────────────────────────────────────────────────── */
 function parseHHMM(s: string | null | undefined): number | null {
   if (!s) return null;
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  const raw = s.trim().toLowerCase();
+  const m12 = /^(\d{1,2}):(\d{2})\s*([ap]m)$/.exec(raw);
+  if (m12) {
+    let h = parseInt(m12[1], 10) % 12;
+    const min = parseInt(m12[2], 10);
+    if (min < 0 || min > 59) return null;
+    if (m12[3] === "pm") h += 12;
+    return h * 60 + min;
+  }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
   if (!m) return null;
   const h = parseInt(m[1], 10);
   const min = parseInt(m[2], 10);
