@@ -203,7 +203,8 @@ function useDeleteCampaign() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`${API}/campaigns/${id}`, { method: "DELETE" });
+      const res = await fetch(`${API}/campaigns/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete campaign");
       qc.removeQueries({ queryKey: ["campaign-logs", id] });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
@@ -288,7 +289,8 @@ function useClearLogs() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`${API}/campaigns/${id}/logs`, { method: "DELETE" });
+      const res = await fetch(`${API}/campaigns/${id}/logs`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to clear logs");
     },
     onSuccess: (_d, id) => qc.invalidateQueries({ queryKey: ["campaign-logs", id] }),
   });
