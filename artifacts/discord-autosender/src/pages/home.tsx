@@ -913,8 +913,18 @@ export default function Home() {
     const ctx = contextOverride ?? aiContext;
     if (!ctx) { toast({ title: "No context", description: "Enter a message to reply to.", variant: "destructive" }); return; }
     try {
+      if (channelOverride) {
+        const res = await sendMessagesMutation.mutateAsync({
+          data: { token: aiToken, channels: [channelOverride], message: fixedAutoReply.trim() || ctx },
+        });
+        if (res.sent > 0) {
+          setGeneratedReply(fixedAutoReply.trim() || ctx);
+          toast({ title: fixedAutoReply.trim() ? "Fixed Reply Sent" : "Reply Sent" });
+          return;
+        }
+      }
       const res = await generateAIReplyMutation.mutateAsync({
-        data: { context: ctx, persona: aiPersona || undefined, token: channelOverride ? aiToken : undefined, channelId: channelOverride },
+        data: { context: ctx, persona: aiPersona || undefined, token: aiToken, channelId: channelOverride },
       });
       setGeneratedReply(res.reply);
       if (res.sent) toast({ title: "Reply Sent" });
