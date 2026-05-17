@@ -627,6 +627,18 @@ function CountdownBadge({ nextSendAt }: { nextSendAt: string | null }) {
   );
 }
 
+function normalizeSendWindow(input: string): string | null {
+  const value = input.trim();
+  if (!value) return null;
+  const match = /^(\d{1,2}):(\d{2})\s*([ap]m)$/i.exec(value);
+  if (!match) return value;
+  let hours = parseInt(match[1], 10) % 12;
+  const minutes = parseInt(match[2], 10);
+  if (minutes < 0 || minutes > 59) return null;
+  if (match[3].toLowerCase() === "pm") hours += 12;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
 /* ─── Main Home Component ─────────────────────────────────── */
 export default function Home() {
   const { toast } = useToast();
@@ -815,8 +827,8 @@ export default function Home() {
       return;
     }
     const channels = newForm.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-    const sendWindowStart = newForm.sendWindowStart?.trim() || null;
-    const sendWindowEnd = newForm.sendWindowEnd?.trim() || null;
+    const sendWindowStart = normalizeSendWindow(newForm.sendWindowStart);
+    const sendWindowEnd = normalizeSendWindow(newForm.sendWindowEnd);
     try {
       const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: newForm.rotateEnabled } as Parameters<typeof createCampaign.mutateAsync>[0]);
       setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd, rotateEnabled: newForm.rotateEnabled });
@@ -830,8 +842,8 @@ export default function Home() {
     const draft = getDraft(id);
     if (!draft) return;
     const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-    const sendWindowStart = draft.sendWindowStart?.trim() || null;
-    const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
+    const sendWindowStart = normalizeSendWindow(draft.sendWindowStart);
+    const sendWindowEnd = normalizeSendWindow(draft.sendWindowEnd);
     try {
       await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       setDraft(id, { editMode: false });
@@ -843,8 +855,8 @@ export default function Home() {
     const draft = getDraft(id);
     if (draft) {
       const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
-      const sendWindowStart = draft.sendWindowStart?.trim() || null;
-      const sendWindowEnd = draft.sendWindowEnd?.trim() || null;
+      const sendWindowStart = normalizeSendWindow(draft.sendWindowStart);
+      const sendWindowEnd = normalizeSendWindow(draft.sendWindowEnd);
       await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]).catch(() => {});
     }
     try {
