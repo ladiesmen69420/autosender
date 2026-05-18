@@ -129,9 +129,8 @@ router.post("/", async (req, res) => {
 
     res.status(201).json(serializeCampaign(row, 0));
   } catch (err) {
-    const safeMessage = err instanceof Error ? err.message.replace(/token[^,]*/gi, "[redacted]") : "Unknown database error";
-    req.log.error({ campaignName: data.name, channelCount: data.channels.length }, "Failed to insert campaign");
-    res.status(500).json({ error: "Failed to create campaign", details: safeMessage });
+    req.log.error({ campaignName: data.name, channelCount: data.channels.length, err }, "Failed to insert campaign");
+    res.status(500).json({ error: "Failed to create campaign", details: "Database error. Schema may be out of date — run migrations." });
   }
 });
 
