@@ -5,6 +5,8 @@ import { discordHeaders } from "./discord-headers";
 import { discordFetch } from "./discord-fetch";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
+const AI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+
 // Per-user in-memory state
 type SessionState = {
   running: boolean;
@@ -15,6 +17,8 @@ type SessionState = {
   lastScanAt: number | null;
   startedAt: number;
   sentCountsByChannel: Record<string, number>;
+  lastError: string | null;
+  aiFailures: number;
 };
 
 const sessions = new Map<string, SessionState>();
@@ -33,8 +37,21 @@ function obfuscate(message: string): string {
   return message + salt;
 }
 
-function jitter(min: number, max: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
+function cancellableDelay(ms: number, state: SessionState): Promise<void> {
+  return new Promise((resolve) => {
+    const interval = 200;
+    let elapsed = 0;
+    const tick = () => {
+      if (state.cancelled || elapsed >= ms) { resolve(); return; }
+      elapsed += interval;
+      setTimeout(tick, Math.min(interval, ms - elapsed + interval));
+    };
+    setTimeout(tick, Math.min(interval, ms));
+  });
+}
+
+function jitter(min: number, max: number, state: SessionState): Promise<void> {
+  return cancellableDelay(min + Math.random() * (max - min), state);
 }
 
 async function ackMessage(token: string, channelId: string, messageId: string): Promise<void> {
@@ -56,17 +73,19 @@ async function sendTyping(token: string, channelId: string): Promise<void> {
   } catch {}
 }
 
-async function humanComposeDelay(token: string, channelId: string, text: string): Promise<void> {
-  await new Promise((r) => setTimeout(r, 1200 + Math.random() * 1800));
+async function humanComposeDelay(token: string, channelId: string, text: string, state: SessionState): Promise<void> {
+  await cancellableDelay(1200 + Math.random() * 1800, state);
+  if (state.cancelled) return;
   await sendTyping(token, channelId);
   const perChar = 45 + Math.random() * 45;
   const typingMs = Math.min(35000, text.length * perChar + 800 + Math.random() * 1500);
   let elapsed = 0;
   while (elapsed < typingMs) {
+    if (state.cancelled) return;
     const slice = Math.min(8000, typingMs - elapsed);
-    await new Promise((r) => setTimeout(r, slice));
+    await cancellableDelay(slice, state);
     elapsed += slice;
-    if (elapsed < typingMs) await sendTyping(token, channelId);
+    if (elapsed < typingMs && !state.cancelled) await sendTyping(token, channelId);
   }
 }
 
@@ -77,7 +96,7 @@ async function warmupChannel(token: string, channelId: string): Promise<void> {
       headers: discordHeaders(token, { contentType: false }),
     });
   } catch {}
-  await jitter(150, 400);
+  await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
   try {
     await discordFetch(`https://discord.com/api/v10/channels/${channelId}/messages?limit=50`, {
       method: "GET",
@@ -105,17 +124,19 @@ function makePrompt(persona?: string): string {
     : `You are a Discord user replying to a direct message. ${style} Match the sender's tone. Write 1-2 short sentences. ${safety}`;
 }
 
-function isActiveHour(start: number, end: number): boolean {
-  const h = new Date().getHours();
+// Active hours check using SGT (UTC+8) consistently
+function isActiveHourSGT(start: number, end: number): boolean {
+  const now = new Date();
+  const sgtHour = (now.getUTCHours() + 8) % 24;
   if (start === end) return true;
-  if (start < end) return h >= start && h < end;
-  return h >= start || h < end;
+  if (start < end) return sgtHour >= start && sgtHour < end;
+  return sgtHour >= start || sgtHour < end;
 }
 
 // ── Core scan ────────────────────────────────────────────────────────────────
 
 async function runScan(userId: string, state: SessionState): Promise<void> {
-  if (state.running) return; // already running, skip
+  if (state.running) return;
   state.running = true;
 
   const [row] = await db.select().from(autoReplySessionsTable).where(eq(autoReplySessionsTable.userId, userId)).limit(1);
@@ -124,14 +145,14 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
     return;
   }
 
-  if (!isActiveHour(row.activeHoursStart, row.activeHoursEnd)) {
+  if (!isActiveHourSGT(row.activeHoursStart, row.activeHoursEnd)) {
     state.running = false;
     return;
   }
 
   const { token, persona, fixedMessage, triggerKeywords, maxRepliesPerUser, maxRepliesPerCycle } = row;
   const useFixed = fixedMessage.trim().length > 0;
-  const triggers = triggerKeywords.split(",").map((s) => s.trim()).filter(Boolean);
+  const triggers = triggerKeywords.split(",").map((s: string) => s.trim()).filter(Boolean);
   const cycleCap = maxRepliesPerCycle > 0 ? maxRepliesPerCycle : 2;
   const perUserCap = maxRepliesPerUser > 0 ? maxRepliesPerUser : Infinity;
 
@@ -139,13 +160,21 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
     const meRes = await discordFetch("https://discord.com/api/v10/users/@me", {
       headers: discordHeaders(token, { contentType: false }),
     });
-    if (!meRes.ok) { state.running = false; return; }
+    if (!meRes.ok) {
+      state.lastError = `Token validation failed (HTTP ${meRes.status})`;
+      state.running = false;
+      return;
+    }
     const me = await meRes.json() as { id: string };
 
     const chRes = await discordFetch("https://discord.com/api/v10/users/@me/channels", {
       headers: discordHeaders(token, { contentType: false }),
     });
-    if (!chRes.ok) { state.running = false; return; }
+    if (!chRes.ok) {
+      state.lastError = `Failed to fetch DM list (HTTP ${chRes.status})`;
+      state.running = false;
+      return;
+    }
     const openChannels = await chRes.json() as Array<{ id: string; type: number; recipients?: Array<{ id: string; username: string }> }>;
     const requestChannels = await fetchMessageRequests(token);
     const seen = new Set(openChannels.map((c) => c.id));
@@ -162,12 +191,16 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
       if (replied >= cycleCap) break;
       if ((state.sentCountsByChannel[ch.id] ?? 0) >= perUserCap) continue;
 
-      if (ordered.indexOf(ch) > 0) await jitter(1500, 4500);
+      if (ordered.indexOf(ch) > 0) await jitter(1500, 4500, state);
+      if (state.cancelled) break;
 
       const msgsRes = await discordFetch(`https://discord.com/api/v10/channels/${ch.id}/messages?limit=1`, {
         headers: discordHeaders(token, { contentType: false }),
       });
-      if (!msgsRes.ok) continue;
+      if (!msgsRes.ok) {
+        logger.warn({ channelId: ch.id, status: msgsRes.status }, "auto-reply-scheduler: failed to fetch messages for channel");
+        continue;
+      }
       const msgs = await msgsRes.json() as Array<{ id: string; content: string; author: { id: string } }>;
       if (!msgs.length || msgs[0].author.id === me.id) continue;
 
@@ -175,7 +208,7 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
 
       if (triggers.length > 0) {
         const hay = (lastMsg.content ?? "").toLowerCase();
-        if (!triggers.some((kw) => hay.includes(kw))) continue;
+        if (!triggers.some((kw: string) => hay.includes(kw))) continue;
       }
 
       const fixed = useFixed ? fixedMessage.trim() : "";
@@ -184,7 +217,7 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
       if (!reply) {
         try {
           const completion = await openai.chat.completions.create({
-            model: "gpt-4.1-mini",
+            model: AI_MODEL,
             max_completion_tokens: 200,
             messages: [
               { role: "system", content: makePrompt(persona || undefined) },
@@ -192,13 +225,23 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
             ],
           });
           reply = completion.choices[0]?.message?.content?.trim() ?? "";
-        } catch { continue; }
+        } catch (aiErr) {
+          const aiMsg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+          state.aiFailures++;
+          state.lastError = `AI generation failed: ${aiMsg}`;
+          logger.error({ err: aiMsg, channelId: ch.id }, "auto-reply-scheduler: OpenAI error");
+          continue;
+        }
       }
       if (!reply) continue;
 
+      if (state.cancelled) break;
+
       await warmupChannel(token, ch.id);
       await ackMessage(token, ch.id, lastMsg.id);
-      await humanComposeDelay(token, ch.id, reply);
+      await humanComposeDelay(token, ch.id, reply, state);
+
+      if (state.cancelled) break;
 
       const sendRes = await discordFetch(`https://discord.com/api/v10/channels/${ch.id}/messages`, {
         method: "POST",
@@ -210,20 +253,27 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
         replied++;
         state.repliesSent++;
         state.sentCountsByChannel[ch.id] = (state.sentCountsByChannel[ch.id] ?? 0) + 1;
+        state.lastError = null;
       } else {
-        let body = "";
-        try { body = await sendRes.text(); } catch {}
-        logger.warn({ channelId: ch.id, status: sendRes.status, body: body.slice(0, 200) }, "auto-reply-scheduler: send failed");
+        let errBody = "";
+        try {
+          const errText = await sendRes.text();
+          try { errBody = JSON.parse(errText)?.message ?? errText; } catch { errBody = errText; }
+        } catch {}
+        const sendErrMsg = `Send to ${ch.id} failed (HTTP ${sendRes.status}): ${errBody.slice(0, 200)}`;
+        state.lastError = sendErrMsg;
+        logger.warn({ channelId: ch.id, status: sendRes.status, body: errBody.slice(0, 200) }, "auto-reply-scheduler: send failed");
       }
     }
   } catch (err) {
-    logger.warn({ err: (err as Error)?.message }, "auto-reply-scheduler: scan error");
+    const msg = err instanceof Error ? err.message : String(err);
+    state.lastError = `Scan error: ${msg}`;
+    logger.warn({ err: msg }, "auto-reply-scheduler: scan error");
   }
 
   state.scansCompleted++;
   state.lastScanAt = Date.now();
 
-  // Persist updated sentCountsByChannel to DB
   try {
     await db.update(autoReplySessionsTable)
       .set({ sentCountsByChannel: JSON.stringify(state.sentCountsByChannel) })
@@ -244,14 +294,13 @@ function scheduleNext(userId: string, state: SessionState): void {
   state.timer = setTimeout(async () => {
     if (state.cancelled) return;
     await runScan(userId, state);
-    scheduleNext(userId, state);
+    if (!state.cancelled) scheduleNext(userId, state);
   }, delay);
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export function startAutoReplySession(userId: string, sentCounts: Record<string, number> = {}): void {
-  // Stop any existing session first
   stopAutoReplySession(userId);
 
   const state: SessionState = {
@@ -263,14 +312,15 @@ export function startAutoReplySession(userId: string, sentCounts: Record<string,
     lastScanAt: null,
     startedAt: Date.now(),
     sentCountsByChannel: { ...sentCounts },
+    lastError: null,
+    aiFailures: 0,
   };
   sessions.set(userId, state);
 
-  // First scan after 3-8s, then recurring
   state.timer = setTimeout(async () => {
     if (state.cancelled) return;
     await runScan(userId, state);
-    scheduleNext(userId, state);
+    if (!state.cancelled) scheduleNext(userId, state);
   }, 3000 + Math.random() * 5000);
 
   logger.info({ userId }, "auto-reply-scheduler: session started");
@@ -292,9 +342,11 @@ export function getAutoReplySessionStatus(userId: string): {
   lastScanAt: number | null;
   uptimeMs: number;
   sentCountsByChannel: Record<string, number>;
+  lastError: string | null;
+  aiFailures: number;
 } {
   const state = sessions.get(userId);
-  if (!state) return { active: false, scansCompleted: 0, repliesSent: 0, lastScanAt: null, uptimeMs: 0, sentCountsByChannel: {} };
+  if (!state) return { active: false, scansCompleted: 0, repliesSent: 0, lastScanAt: null, uptimeMs: 0, sentCountsByChannel: {}, lastError: null, aiFailures: 0 };
   return {
     active: true,
     scansCompleted: state.scansCompleted,
@@ -302,6 +354,8 @@ export function getAutoReplySessionStatus(userId: string): {
     lastScanAt: state.lastScanAt,
     uptimeMs: Date.now() - state.startedAt,
     sentCountsByChannel: state.sentCountsByChannel,
+    lastError: state.lastError,
+    aiFailures: state.aiFailures,
   };
 }
 

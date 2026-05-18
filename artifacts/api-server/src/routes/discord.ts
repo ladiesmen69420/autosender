@@ -245,20 +245,18 @@ router.post("/send-messages", async (req, res) => {
   }
 
   const { token, channels, message } = parsed.data;
-  const results: Array<{ channelId: string; success: boolean; error?: string }> = [];
+  const results: Array<{ channelId: string; success: boolean; error?: string; retryAfterMs?: number }> = [];
   let sent = 0;
   let failed = 0;
 
   for (const channelId of channels) {
-    const content = message;
-
     try {
       const response = await discordFetch(
         `https://discord.com/api/v10/channels/${channelId}/messages`,
         {
           method: "POST",
           headers: discordHeaders(token),
-          body: JSON.stringify({ content }),
+          body: JSON.stringify({ content: message }),
         },
       );
 
@@ -266,17 +264,29 @@ router.post("/send-messages", async (req, res) => {
         sent++;
         results.push({ channelId, success: true });
       } else {
-        const errData = (await response.json()) as { message?: string };
+        // Safely parse error body — Discord may return JSON or plain text
+        let errorText = `HTTP ${response.status}`;
+        let retryAfterMs: number | undefined;
+        try {
+          const rawText = await response.text();
+          try {
+            const errData = JSON.parse(rawText) as { message?: string; retry_after?: number; code?: number };
+            if (errData.retry_after) retryAfterMs = Math.ceil(errData.retry_after * 1000);
+            errorText = errData.message ?? errorText;
+          } catch {
+            if (rawText) errorText = rawText.slice(0, 200);
+          }
+        } catch {}
+        if (response.status === 429) {
+          errorText = `Rate limited by Discord${retryAfterMs ? ` — retry in ${Math.ceil(retryAfterMs / 1000)}s` : ""}`;
+        }
         failed++;
-        results.push({
-          channelId,
-          success: false,
-          error: errData.message ?? `HTTP ${response.status}`,
-        });
+        results.push({ channelId, success: false, error: errorText, retryAfterMs });
       }
     } catch (err) {
       failed++;
-      results.push({ channelId, success: false, error: "Network error" });
+      const msg = err instanceof Error ? err.message : String(err);
+      results.push({ channelId, success: false, error: `Network error: ${msg}` });
     }
   }
 
@@ -327,6 +337,7 @@ router.post("/dms", async (req, res) => {
     ];
 
     const dms = [];
+    let fetchFailures = 0;
 
     for (const channel of allChannels.slice(0, 30)) {
       try {
@@ -334,7 +345,11 @@ router.post("/dms", async (req, res) => {
           `https://discord.com/api/v10/channels/${channel.id}/messages?limit=1`,
           { headers: discordHeaders(token, { contentType: false }) },
         );
-        if (!msgsRes.ok) continue;
+        if (!msgsRes.ok) {
+          fetchFailures++;
+          req.log.warn({ channelId: channel.id, status: msgsRes.status }, "Failed to fetch messages for DM channel");
+          continue;
+        }
 
         const msgs = (await msgsRes.json()) as Array<{
           id: string;
@@ -357,32 +372,36 @@ router.post("/dms", async (req, res) => {
           lastMessageId: lastMsg.id,
           fromMe: lastMsg.author.id === me.id,
         });
-      } catch {
-        // Skip errored channels
+      } catch (err) {
+        fetchFailures++;
+        req.log.warn({ channelId: channel.id, err }, "Exception fetching DM channel messages");
       }
     }
 
-    res.json(dms);
+    res.json({ dms, fetchFailures, total: allChannels.length });
   } catch (err) {
     req.log.error({ err }, "Error fetching DMs");
     res.status(500).json([]);
   }
 });
 
+const AI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+
 router.post("/ai-reply", async (req, res) => {
   const parsed = GenerateAIReplyBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ reply: "", sent: false });
+    res.status(400).json({ reply: "", sent: false, error: "Invalid request body" });
     return;
   }
 
   const { context, persona, token, channelId } = parsed.data;
 
+  let reply = "";
   try {
     const systemPrompt = makeHumanizedPrompt(persona);
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-5.2",
+      model: AI_MODEL,
       max_completion_tokens: 200,
       messages: [
         { role: "system", content: systemPrompt },
@@ -390,30 +409,53 @@ router.post("/ai-reply", async (req, res) => {
       ],
     });
 
-    const reply = completion.choices[0]?.message?.content?.trim() ?? "";
-
-    let sent = false;
-    if (token && channelId && reply) {
-      try {
-        const sendRes = await discordFetch(
-          `https://discord.com/api/v10/channels/${channelId}/messages`,
-          {
-            method: "POST",
-            headers: discordHeaders(token),
-            body: JSON.stringify({ content: reply }),
-          },
-        );
-        sent = sendRes.ok;
-      } catch {
-        sent = false;
-      }
-    }
-
-    res.json({ reply, sent });
+    reply = completion.choices[0]?.message?.content?.trim() ?? "";
   } catch (err) {
-    req.log.error({ err }, "AI reply generation error");
-    res.status(500).json({ reply: "", sent: false });
+    req.log.error({ err, model: AI_MODEL }, "AI reply generation error");
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ reply: "", sent: false, error: `AI generation failed: ${msg}` });
+    return;
   }
+
+  if (!reply) {
+    res.status(500).json({ reply: "", sent: false, error: "AI returned an empty reply. Try again." });
+    return;
+  }
+
+  let sent = false;
+  let sendError: string | undefined;
+  if (token && channelId) {
+    try {
+      const sendRes = await discordFetch(
+        `https://discord.com/api/v10/channels/${channelId}/messages`,
+        {
+          method: "POST",
+          headers: discordHeaders(token),
+          body: JSON.stringify({ content: reply }),
+        },
+      );
+      sent = sendRes.ok;
+      if (!sent) {
+        let errBody = `HTTP ${sendRes.status}`;
+        try {
+          const raw = await sendRes.text();
+          try { errBody = (JSON.parse(raw) as { message?: string }).message ?? errBody; } catch { if (raw) errBody = raw.slice(0, 200); }
+        } catch {}
+        if (sendRes.status === 429) {
+          sendError = `Discord rate limited your account. Wait a moment before retrying.`;
+        } else {
+          sendError = `Discord rejected the message: ${errBody}`;
+        }
+        req.log.warn({ channelId, status: sendRes.status, errBody }, "AI reply send to Discord failed");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      sendError = `Network error while sending to Discord: ${msg}`;
+      req.log.error({ err, channelId }, "AI reply Discord send network error");
+    }
+  }
+
+  res.json({ reply, sent, sendError });
 });
 
 router.post("/auto-reply", async (req, res) => {
@@ -425,8 +467,8 @@ router.post("/auto-reply", async (req, res) => {
 
   const { token, persona, fixedMessage, fixedMessageVariants, triggerKeywords, maxRepliesPerUser, sentCountsByChannel, maxRepliesPerCycle } = parsed.data;
   const triggers = (triggerKeywords ?? [])
-    .map((k) => k.trim().toLowerCase())
-    .filter((k) => k.length > 0);
+    .map((k: string) => k.trim().toLowerCase())
+    .filter((k: string) => k.length > 0);
   const perUserCap = typeof maxRepliesPerUser === "number" && maxRepliesPerUser > 0 ? maxRepliesPerUser : Infinity;
   const sentCounts: Record<string, number> = sentCountsByChannel ?? {};
   const cycleCap = typeof maxRepliesPerCycle === "number" && maxRepliesPerCycle > 0 ? maxRepliesPerCycle : Infinity;
@@ -509,7 +551,7 @@ router.post("/auto-reply", async (req, res) => {
         // Trigger keyword filter
         if (triggers.length > 0) {
           const haystack = (lastMsg.content ?? "").toLowerCase();
-          const matched = triggers.some((kw) => haystack.includes(kw));
+          const matched = triggers.some((kw: string) => haystack.includes(kw));
           if (!matched) {
             skipped++;
             continue;
@@ -639,7 +681,7 @@ router.post("/warmup/status", async (req, res) => {
 router.get("/sessions", async (req, res) => {
   const rows = await db.select().from(sessionsTable).orderBy(sessionsTable.createdAt);
   res.json(
-    rows.map((r) => ({
+    rows.map((r: { createdAt: Date; [k: string]: unknown }) => ({
       ...r,
       createdAt: r.createdAt.toISOString(),
     })),

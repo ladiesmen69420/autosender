@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
 import { eq, and, gte, desc, or, isNull } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
-import { startCampaignSchedule, stopCampaignSchedule, isRunning, getNextSendAt, doSend } from "../scheduler";
+import { startCampaignSchedule, stopCampaignSchedule, getNextSendAt, doSend } from "../scheduler";
 import { pickStableUA } from "../lib/discord-headers";
 
 const router = Router();
@@ -21,22 +21,57 @@ function userFilter(userId: string | null) {
   return or(eq(campaignsTable.userId, userId), isNull(campaignsTable.userId));
 }
 
+/* ─── Validation helpers ─────────────────────────────────────────────────── */
 
-function parseCampaignBody(body: Record<string, unknown>) {
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  const token = typeof body.token === "string" ? body.token.trim() : "";
-  const channels = Array.isArray(body.channels) ? (body.channels as string[]).filter(Boolean) : [];
-  const message = typeof body.message === "string" ? body.message : "";
-  const messageVariants = Array.isArray(body.messageVariants)
-    ? (body.messageVariants as string[]).map((v) => String(v).trim()).filter(Boolean)
-    : undefined;
-  const delay = typeof body.delay === "number" ? Math.min(18000, Math.max(1, body.delay)) : 15;
-  const jitter = typeof body.jitter === "number" ? Math.min(100, Math.max(0, body.jitter)) : 0;
-  const rateLimitProtection = typeof body.rateLimitProtection === "boolean" ? body.rateLimitProtection : undefined;
-  const sendWindowStart = typeof body.sendWindowStart === "string" && body.sendWindowStart.trim() ? body.sendWindowStart.trim() : null;
-  const sendWindowEnd = typeof body.sendWindowEnd === "string" && body.sendWindowEnd.trim() ? body.sendWindowEnd.trim() : null;
-  const rotateEnabled = typeof body.rotateEnabled === "boolean" ? body.rotateEnabled : true;
-  return { name, token, channels, message, messageVariants, delay, jitter, rateLimitProtection, sendWindowStart, sendWindowEnd, rotateEnabled };
+function parseHHMM(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const raw = s.trim().toLowerCase();
+  const m12 = /^(\d{1,2}):(\d{2})\s*([ap]m)$/.exec(raw);
+  if (m12) {
+    let h = parseInt(m12[1], 10) % 12;
+    const min = parseInt(m12[2], 10);
+    if (min < 0 || min > 59) return null;
+    if (m12[3] === "pm") h += 12;
+    return h * 60 + min;
+  }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function validateSendWindow(start: string | null, end: string | null): string | null {
+  if (start && parseHHMM(start) === null) return `Invalid send window start time "${start}". Use HH:MM or H:MM AM/PM format.`;
+  if (end && parseHHMM(end) === null) return `Invalid send window end time "${end}". Use HH:MM or H:MM AM/PM format.`;
+  if ((start && !end) || (!start && end)) return "Both send window start and end must be provided together.";
+  return null;
+}
+
+function validateChannels(channels: string[]): string | null {
+  if (channels.length === 0) return "At least one channel ID is required.";
+  const invalid = channels.filter((ch) => !/^\d{15,20}$/.test(ch));
+  if (invalid.length > 0) return `Invalid channel IDs: ${invalid.join(", ")}. Channel IDs must be 15–20 digit numbers.`;
+  return null;
+}
+
+function validateMessage(message: string): string | null {
+  if (!message.trim()) return "Message cannot be empty.";
+  if (message.length > 2000) return "Message exceeds Discord's 2000-character limit.";
+  return null;
+}
+
+function validateDelay(delay: unknown): string | null {
+  if (typeof delay !== "number" || isNaN(delay) || delay < 1 || delay > 18000)
+    return "Interval must be between 1 and 18000 seconds.";
+  return null;
+}
+
+function validateJitter(jitter: unknown): string | null {
+  if (typeof jitter !== "number" || isNaN(jitter) || jitter < 0 || jitter > 100)
+    return "Jitter must be between 0 and 100 percent.";
+  return null;
 }
 
 async function getSentToday(campaignId: number): Promise<number> {
@@ -67,6 +102,7 @@ function serializeCampaign(row: typeof campaignsTable.$inferSelect, sentToday = 
   };
 }
 
+/* ─── GET / ──────────────────────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
   const userId = getUserId(req);
   const filter = userFilter(userId);
@@ -80,90 +116,157 @@ router.get("/", async (req, res) => {
     .where(and(eq(campaignLogsTable.type, "success"), gte(campaignLogsTable.timestamp, todayMidnight)));
 
   const todayMap: Record<number, number> = {};
-  for (const r of todayCounts) {
+  for (const r of todayCounts as Array<{ campaignId: number; id: number }>) {
     todayMap[r.campaignId] = (todayMap[r.campaignId] ?? 0) + 1;
   }
 
-  res.json(rows.map((r) => serializeCampaign(r, todayMap[r.id] ?? 0)));
+  res.json(rows.map((r: Parameters<typeof serializeCampaign>[0]) => serializeCampaign(r, todayMap[r.id] ?? 0)));
 });
 
+/* ─── POST / (create) ────────────────────────────────────────────────────── */
 router.post("/", async (req, res) => {
   const userId = getUserId(req);
-  const data = parseCampaignBody(req.body as Record<string, unknown>);
+  const body = req.body as Record<string, unknown>;
 
-  if (!data.name) {
-    res.status(400).json({ error: "Validation failed", details: "Campaign name is required." });
-    return;
-  }
-  if (!data.token) {
-    res.status(400).json({ error: "Validation failed", details: "Discord token is required." });
-    return;
-  }
-  if (!data.message) {
-    res.status(400).json({ error: "Validation failed", details: "Message is required." });
-    return;
-  }
-  if (!Array.isArray(data.channels) || data.channels.length === 0) {
-    res.status(400).json({ error: "Validation failed", details: "At least one channel ID is required." });
-    return;
-  }
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  const rawChannels = Array.isArray(body.channels) ? (body.channels as string[]).map((c) => String(c).trim()).filter(Boolean) : [];
+  const message = typeof body.message === "string" ? body.message : "";
+  const messageVariants = Array.isArray(body.messageVariants)
+    ? (body.messageVariants as string[]).map((v) => String(v).trim()).filter(Boolean)
+    : null;
+  const delay = typeof body.delay === "number" ? body.delay : 15;
+  const jitter = typeof body.jitter === "number" ? body.jitter : 0;
+  const rateLimitProtection = typeof body.rateLimitProtection === "boolean" ? body.rateLimitProtection : true;
+  const sendWindowStart = typeof body.sendWindowStart === "string" && body.sendWindowStart.trim() ? body.sendWindowStart.trim() : null;
+  const sendWindowEnd = typeof body.sendWindowEnd === "string" && body.sendWindowEnd.trim() ? body.sendWindowEnd.trim() : null;
+  const rotateEnabled = typeof body.rotateEnabled === "boolean" ? body.rotateEnabled : true;
+
+  if (!name) { res.status(400).json({ error: "Validation failed", details: "Campaign name is required." }); return; }
+  if (!token) { res.status(400).json({ error: "Validation failed", details: "Discord token is required." }); return; }
+
+  const channelErr = validateChannels(rawChannels);
+  if (channelErr) { res.status(400).json({ error: "Validation failed", details: channelErr }); return; }
+
+  const msgErr = validateMessage(message);
+  if (msgErr) { res.status(400).json({ error: "Validation failed", details: msgErr }); return; }
+
+  const delayErr = validateDelay(delay);
+  if (delayErr) { res.status(400).json({ error: "Validation failed", details: delayErr }); return; }
+
+  const jitterErr = validateJitter(jitter);
+  if (jitterErr) { res.status(400).json({ error: "Validation failed", details: jitterErr }); return; }
+
+  const winErr = validateSendWindow(sendWindowStart, sendWindowEnd);
+  if (winErr) { res.status(400).json({ error: "Validation failed", details: winErr }); return; }
 
   try {
     const [row] = await db
       .insert(campaignsTable)
       .values({
         userId,
-        name: data.name,
-        token: data.token,
-        channels: data.channels,
-        message: data.message,
-        messageVariants: data.messageVariants ?? null,
-        delay: data.delay,
-        jitter: data.jitter,
-        rateLimitProtection: data.rateLimitProtection ?? true,
-        sendWindowStart: data.sendWindowStart,
-        sendWindowEnd: data.sendWindowEnd,
-        rotateEnabled: data.rotateEnabled,
+        name,
+        token,
+        channels: rawChannels,
+        message,
+        messageVariants: messageVariants ?? null,
+        delay,
+        jitter,
+        rateLimitProtection,
+        sendWindowStart,
+        sendWindowEnd,
+        rotateEnabled,
       })
       .returning();
 
     res.status(201).json(serializeCampaign(row, 0));
   } catch (err) {
-    req.log.error({ campaignName: data.name, channelCount: data.channels.length, err }, "Failed to insert campaign");
-    res.status(500).json({ error: "Failed to create campaign", details: "Database error. Schema may be out of date — run migrations." });
+    req.log.error({ campaignName: name, err }, "Failed to insert campaign");
+    res.status(500).json({ error: "Failed to create campaign", details: "A database error occurred. Please try again." });
   }
 });
 
+/* ─── PUT /:id (update) ──────────────────────────────────────────────────── */
 router.put("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const data = parseCampaignBody(req.body as Record<string, unknown>);
-  const update: Record<string, unknown> = {};
-  if (data.name) update.name = data.name;
-  if (data.token) update.token = data.token;
-  update.channels = data.channels;
-  if (data.message) update.message = data.message;
-  update.messageVariants = data.messageVariants ?? null;
-  update.delay = data.delay;
-  update.jitter = data.jitter;
-  if (data.rateLimitProtection !== undefined) update.rateLimitProtection = data.rateLimitProtection;
-  update.sendWindowStart = data.sendWindowStart;
-  update.sendWindowEnd = data.sendWindowEnd;
-  update.rotateEnabled = data.rotateEnabled;
-  update.consecutiveFailures = 0;
+  const body = req.body as Record<string, unknown>;
+  const update: Record<string, unknown> = { consecutiveFailures: 0 };
 
-  const [row] = await db
-    .update(campaignsTable)
-    .set(update)
-    .where(eq(campaignsTable.id, id))
-    .returning();
+  if ("name" in body) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) { res.status(400).json({ error: "Validation failed", details: "Campaign name cannot be empty." }); return; }
+    update.name = name;
+  }
+  if ("token" in body) {
+    const token = typeof body.token === "string" ? body.token.trim() : "";
+    if (!token) { res.status(400).json({ error: "Validation failed", details: "Discord token cannot be empty." }); return; }
+    update.token = token;
+  }
+  if ("channels" in body) {
+    const channels = Array.isArray(body.channels) ? (body.channels as string[]).map((c) => String(c).trim()).filter(Boolean) : [];
+    const channelErr = validateChannels(channels);
+    if (channelErr) { res.status(400).json({ error: "Validation failed", details: channelErr }); return; }
+    update.channels = channels;
+  }
+  if ("message" in body) {
+    const message = typeof body.message === "string" ? body.message : "";
+    const msgErr = validateMessage(message);
+    if (msgErr) { res.status(400).json({ error: "Validation failed", details: msgErr }); return; }
+    update.message = message;
+  }
+  if ("messageVariants" in body) {
+    update.messageVariants = Array.isArray(body.messageVariants)
+      ? (body.messageVariants as string[]).map((v) => String(v).trim()).filter(Boolean)
+      : null;
+  }
+  if ("delay" in body) {
+    const delayErr = validateDelay(body.delay);
+    if (delayErr) { res.status(400).json({ error: "Validation failed", details: delayErr }); return; }
+    update.delay = body.delay as number;
+  }
+  if ("jitter" in body) {
+    const jitterErr = validateJitter(body.jitter);
+    if (jitterErr) { res.status(400).json({ error: "Validation failed", details: jitterErr }); return; }
+    update.jitter = body.jitter as number;
+  }
+  if ("rateLimitProtection" in body) {
+    update.rateLimitProtection = typeof body.rateLimitProtection === "boolean" ? body.rateLimitProtection : true;
+  }
+  if ("sendWindowStart" in body || "sendWindowEnd" in body) {
+    const start = "sendWindowStart" in body
+      ? (typeof body.sendWindowStart === "string" && body.sendWindowStart.trim() ? body.sendWindowStart.trim() : null)
+      : undefined;
+    const end = "sendWindowEnd" in body
+      ? (typeof body.sendWindowEnd === "string" && body.sendWindowEnd.trim() ? body.sendWindowEnd.trim() : null)
+      : undefined;
+    const winErr = validateSendWindow(start ?? null, end ?? null);
+    if (winErr) { res.status(400).json({ error: "Validation failed", details: winErr }); return; }
+    if (start !== undefined) update.sendWindowStart = start;
+    if (end !== undefined) update.sendWindowEnd = end;
+  }
+  if ("rotateEnabled" in body) {
+    update.rotateEnabled = typeof body.rotateEnabled === "boolean" ? body.rotateEnabled : true;
+  }
 
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  const sentToday = await getSentToday(id);
-  res.json(serializeCampaign(row, sentToday));
+  try {
+    const [row] = await db
+      .update(campaignsTable)
+      .set(update)
+      .where(eq(campaignsTable.id, id))
+      .returning();
+
+    if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
+    const sentToday = await getSentToday(id);
+    res.json(serializeCampaign(row, sentToday));
+  } catch (err) {
+    req.log.error({ campaignId: id, err }, "Failed to update campaign");
+    res.status(500).json({ error: "Failed to update campaign", details: "A database error occurred. Please try again." });
+  }
 });
 
+/* ─── DELETE /:id ────────────────────────────────────────────────────────── */
 router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -175,66 +278,112 @@ router.delete("/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+/* ─── POST /:id/duplicate ────────────────────────────────────────────────── */
 router.post("/:id/duplicate", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const userId = getUserId(req);
   const [original] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id)).limit(1);
-  if (!original) { res.status(404).json({ error: "Not found" }); return; }
+  if (!original) { res.status(404).json({ error: "Campaign not found" }); return; }
 
-  const [row] = await db
-    .insert(campaignsTable)
-    .values({
-      userId,
-      name: `${original.name} (copy)`,
-      token: original.token,
-      channels: original.channels,
-      message: original.message,
-      messageVariants: original.messageVariants ?? null,
-      delay: original.delay,
-      jitter: original.jitter,
-      rateLimitProtection: original.rateLimitProtection,
-      sendWindowStart: original.sendWindowStart,
-      sendWindowEnd: original.sendWindowEnd,
-    })
-    .returning();
+  try {
+    const [row] = await db
+      .insert(campaignsTable)
+      .values({
+        userId,
+        name: `${original.name} (copy)`,
+        token: original.token,
+        channels: original.channels,
+        message: original.message,
+        messageVariants: original.messageVariants ?? null,
+        delay: original.delay,
+        jitter: original.jitter,
+        rateLimitProtection: original.rateLimitProtection,
+        sendWindowStart: original.sendWindowStart,
+        sendWindowEnd: original.sendWindowEnd,
+        rotateEnabled: original.rotateEnabled,
+        // Runtime stats reset to zero (sentCount, failedCount, rateLimitBonus, etc. use defaults)
+      })
+      .returning();
 
-  res.status(201).json(serializeCampaign(row, 0));
+    res.status(201).json(serializeCampaign(row, 0));
+  } catch (err) {
+    req.log.error({ campaignId: id, err }, "Failed to duplicate campaign");
+    res.status(500).json({ error: "Failed to duplicate campaign", details: "A database error occurred." });
+  }
 });
 
+/* ─── POST /:id/start ────────────────────────────────────────────────────── */
 router.post("/:id/start", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const [row] = await db
-    .update(campaignsTable)
-    .set({ running: true, consecutiveFailures: 0, rotateEnabled: true })
-    .where(eq(campaignsTable.id, id))
-    .returning();
+  const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id)).limit(1);
+  if (!campaign) { res.status(404).json({ error: "Campaign not found" }); return; }
 
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  startCampaignSchedule(id);
-  const sentToday = await getSentToday(id);
-  res.json(serializeCampaign(row, sentToday));
+  // Validate all required fields before starting
+  if (!campaign.token || !campaign.token.trim()) {
+    res.status(400).json({ error: "Cannot start", details: "Campaign has no Discord token. Edit the campaign and add a valid token." });
+    return;
+  }
+  const channelErr = validateChannels(campaign.channels);
+  if (channelErr) { res.status(400).json({ error: "Cannot start", details: channelErr }); return; }
+
+  const msgErr = validateMessage(campaign.message);
+  if (msgErr) { res.status(400).json({ error: "Cannot start", details: msgErr }); return; }
+
+  const delayErr = validateDelay(campaign.delay);
+  if (delayErr) { res.status(400).json({ error: "Cannot start", details: delayErr }); return; }
+
+  const jitterErr = validateJitter(campaign.jitter);
+  if (jitterErr) { res.status(400).json({ error: "Cannot start", details: jitterErr }); return; }
+
+  const winErr = validateSendWindow(campaign.sendWindowStart, campaign.sendWindowEnd);
+  if (winErr) { res.status(400).json({ error: "Cannot start", details: winErr }); return; }
+
+  try {
+    const [row] = await db
+      .update(campaignsTable)
+      .set({ running: true, consecutiveFailures: 0 })
+      .where(eq(campaignsTable.id, id))
+      .returning();
+
+    if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
+
+    startCampaignSchedule(id);
+    const sentToday = await getSentToday(id);
+    res.json(serializeCampaign(row, sentToday));
+  } catch (err) {
+    req.log.error({ campaignId: id, err }, "Failed to start campaign");
+    res.status(500).json({ error: "Failed to start campaign", details: "A database error occurred." });
+  }
 });
 
+/* ─── POST /:id/stop ─────────────────────────────────────────────────────── */
 router.post("/:id/stop", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   stopCampaignSchedule(id);
-  const [row] = await db
-    .update(campaignsTable)
-    .set({ running: false })
-    .where(eq(campaignsTable.id, id))
-    .returning();
 
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  const sentToday = await getSentToday(id);
-  res.json(serializeCampaign(row, sentToday));
+  try {
+    const [row] = await db
+      .update(campaignsTable)
+      .set({ running: false })
+      .where(eq(campaignsTable.id, id))
+      .returning();
+
+    if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
+    const sentToday = await getSentToday(id);
+    res.json(serializeCampaign(row, sentToday));
+  } catch (err) {
+    req.log.error({ campaignId: id, err }, "Failed to stop campaign");
+    res.status(500).json({ error: "Failed to stop campaign", details: "A database error occurred." });
+  }
 });
 
+/* ─── POST /:id/reset-stats ──────────────────────────────────────────────── */
 router.post("/:id/reset-stats", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -245,20 +394,23 @@ router.post("/:id/reset-stats", async (req, res) => {
     .where(eq(campaignsTable.id, id))
     .returning();
 
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
   res.json(serializeCampaign(row, 0));
 });
 
+/* ─── POST /:id/test-send ────────────────────────────────────────────────── */
 router.post("/:id/test-send", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id)).limit(1);
-  if (!campaign) { res.status(404).json({ error: "Not found" }); return; }
-  if (!campaign.token || campaign.channels.length === 0 || !campaign.message) {
-    res.status(400).json({ error: "Campaign must have a token, channels, and message." });
-    return;
-  }
+  if (!campaign) { res.status(404).json({ error: "Campaign not found" }); return; }
+
+  if (!campaign.token) { res.status(400).json({ error: "Cannot test", details: "Campaign has no token." }); return; }
+  const channelErr = validateChannels(campaign.channels);
+  if (channelErr) { res.status(400).json({ error: "Cannot test", details: channelErr }); return; }
+  const msgErr = validateMessage(campaign.message);
+  if (msgErr) { res.status(400).json({ error: "Cannot test", details: msgErr }); return; }
 
   const ua = pickStableUA(campaign.token);
   const results: { channelId: string; success: boolean; status: number; error?: string; suggestion?: string }[] = [];
@@ -296,6 +448,7 @@ router.post("/:id/test-send", async (req, res) => {
   res.json({ results });
 });
 
+/* ─── GET /:id/logs ──────────────────────────────────────────────────────── */
 router.get("/:id/logs", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -318,9 +471,10 @@ router.get("/:id/logs", async (req, res) => {
     .orderBy(desc(campaignLogsTable.timestamp))
     .limit(500);
 
-  res.json(logs.map((l) => ({ ...l, timestamp: l.timestamp.toISOString() })));
+  res.json(logs.map((l: { timestamp: Date; [k: string]: unknown }) => ({ ...l, timestamp: l.timestamp.toISOString() })));
 });
 
+/* ─── DELETE /:id/logs ───────────────────────────────────────────────────── */
 router.delete("/:id/logs", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -329,6 +483,7 @@ router.delete("/:id/logs", async (req, res) => {
   res.json({ success: true });
 });
 
+/* ─── PATCH /:id/rate-limit-protection ───────────────────────────────────── */
 router.patch("/:id/rate-limit-protection", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -342,7 +497,7 @@ router.patch("/:id/rate-limit-protection", async (req, res) => {
     .where(eq(campaignsTable.id, id))
     .returning();
 
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
   const sentToday = await getSentToday(id);
   res.json(serializeCampaign(row, sentToday));
 });

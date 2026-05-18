@@ -200,7 +200,15 @@ function useUpdateCampaign() {
   return useMutation({
     mutationFn: async ({ id, ...data }: Partial<ServerCampaign> & { id: number }) => {
       const res = await fetch(`${API}/campaigns/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) {
+        let msg = "Failed to update campaign";
+        try {
+          const body = await res.json() as { error?: string; details?: string };
+          if (body.details) msg = body.details;
+          else if (body.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
       return res.json() as Promise<ServerCampaign>;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
@@ -236,7 +244,15 @@ function useStartCampaign() {
   return useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`${API}/campaigns/${id}/start`, { method: "POST" });
-      if (!res.ok) throw new Error("Failed to start");
+      if (!res.ok) {
+        let msg = "Failed to start campaign";
+        try {
+          const body = await res.json() as { error?: string; details?: string };
+          if (body.details) msg = body.details;
+          else if (body.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
       return res.json() as Promise<ServerCampaign>;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
@@ -248,7 +264,15 @@ function useStopCampaign() {
   return useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`${API}/campaigns/${id}/stop`, { method: "POST" });
-      if (!res.ok) throw new Error("Failed to stop");
+      if (!res.ok) {
+        let msg = "Failed to stop campaign";
+        try {
+          const body = await res.json() as { error?: string; details?: string };
+          if (body.details) msg = body.details;
+          else if (body.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
       return res.json() as Promise<ServerCampaign>;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
@@ -272,7 +296,15 @@ function useTestSend() {
   return useMutation({
     mutationFn: async (id: number): Promise<{ results: TestResult[] }> => {
       const res = await fetch(`${API}/campaigns/${id}/test-send`, { method: "POST" });
-      if (!res.ok) throw new Error("Test send failed");
+      if (!res.ok) {
+        let msg = "Test send failed";
+        try {
+          const body = await res.json() as { error?: string; details?: string };
+          if (body.details) msg = body.details;
+          else if (body.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
       return res.json();
     },
     onSuccess: (_data, id) => qc.invalidateQueries({ queryKey: ["campaign-logs", id] }),
@@ -777,23 +809,39 @@ export default function Home() {
   const [testResults, setTestResults] = useState<TestResult[] | null>(null);
   const [showTestDialog, setShowTestDialog] = useState(false);
 
+  // Sync drafts from server — initialize new campaigns and refresh non-edit drafts when server data changes
+  const campaignServerFingerprint = campaigns.map((c) =>
+    `${c.id}:${c.name}:${c.token}:${c.channels.join(",")}:${c.message}:${c.delay}:${c.jitter}:${c.sendWindowStart ?? ""}:${c.sendWindowEnd ?? ""}:${c.rotateEnabled}`
+  ).join("|");
+
   useEffect(() => {
-    campaigns.forEach((c) => {
-      if (!drafts[c.id]) {
-        setDrafts((p) => ({
-          ...p,
-          [c.id]: {
-            name: c.name, token: c.token,
+    if (campaigns.length === 0) return;
+    setDrafts((prev) => {
+      const next = { ...prev };
+      campaigns.forEach((c) => {
+        const existing = next[c.id];
+        // Always init if missing; only sync from server when not in edit mode
+        if (!existing || !existing.editMode) {
+          next[c.id] = {
+            name: c.name,
+            token: c.token,
             channelsInput: c.channels.join("\n"),
-            message: c.message, delay: c.delay, jitter: c.jitter,
-            expanded: true, editMode: false, tokenValid: null, rotateEnabled: c.rotateEnabled,
+            message: c.message,
+            delay: c.delay,
+            jitter: c.jitter,
+            expanded: existing?.expanded ?? true,
+            editMode: false,
+            tokenValid: existing?.tokenValid ?? null,
+            rotateEnabled: c.rotateEnabled,
             sendWindowStart: c.sendWindowStart ?? "",
             sendWindowEnd: c.sendWindowEnd ?? "",
-          },
-        }));
-      }
+          };
+        }
+      });
+      return next;
     });
-  }, [campaigns.map((c) => c.id).join(",")]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignServerFingerprint]);
 
   useEffect(() => {
     setPresenceActive(!!presenceServerStatus?.connected);
@@ -858,7 +906,9 @@ export default function Home() {
       await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       setDraft(id, { editMode: false });
       toast({ title: "Saved", description: "Changes will take effect on next send cycle." });
-    } catch { toast({ title: "Error", description: "Failed to save.", variant: "destructive" }); }
+    } catch (err) {
+      toast({ title: "Save Failed", description: err instanceof Error ? err.message : "Failed to save.", variant: "destructive" });
+    }
   };
 
   const handleStart = async (id: number) => {
@@ -867,11 +917,18 @@ export default function Home() {
       const channels = draft.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
       const sendWindowStart = normalizeSendWindow(draft.sendWindowStart);
       const sendWindowEnd = normalizeSendWindow(draft.sendWindowEnd);
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]).catch(() => {});
+      try {
+        await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+      } catch (err) {
+        toast({ title: "Save Failed — Campaign Not Started", description: err instanceof Error ? err.message : "Failed to save before starting.", variant: "destructive" });
+        return;
+      }
     }
     try {
       await startCampaign.mutateAsync(id);
-    } catch { toast({ title: "Error", description: "Failed to start campaign.", variant: "destructive" }); }
+    } catch (err) {
+      toast({ title: "Cannot Start", description: err instanceof Error ? err.message : "Failed to start campaign.", variant: "destructive" });
+    }
   };
 
   const handleStop = async (id: number) => {
@@ -895,18 +952,57 @@ export default function Home() {
   };
 
   const handleTestSend = async (id: number) => {
+    // If draft is in edit mode or has unsaved changes, save first
+    const draft = getDraft(id);
+    const campaign = campaigns.find((c) => c.id === id);
+    const hasUnsavedChanges = draft && campaign && (
+      draft.name !== campaign.name ||
+      draft.token !== campaign.token ||
+      draft.channelsInput !== campaign.channels.join("\n") ||
+      draft.message !== campaign.message ||
+      draft.delay !== campaign.delay ||
+      draft.jitter !== campaign.jitter
+    );
+    if (draft?.editMode || hasUnsavedChanges) {
+      toast({ title: "Saving before test…", description: "Unsaved changes detected. Saving now." });
+      try {
+        const channels = draft!.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
+        const sendWindowStart = normalizeSendWindow(draft!.sendWindowStart);
+        const sendWindowEnd = normalizeSendWindow(draft!.sendWindowEnd);
+        await updateCampaign.mutateAsync({ id, name: draft!.name, token: draft!.token, channels, message: draft!.message, delay: draft!.delay, jitter: draft!.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft!.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+        setDraft(id, { editMode: false });
+      } catch (err) {
+        toast({ title: "Save Failed", description: err instanceof Error ? err.message : "Could not save before testing.", variant: "destructive" });
+        return;
+      }
+    }
     try {
       const r = await testSend.mutateAsync(id);
       setTestResults(r.results);
       setShowTestDialog(true);
-    } catch { toast({ title: "Error", description: "Test send failed. Check your token and channels.", variant: "destructive" }); }
+    } catch (err) {
+      toast({ title: "Test Failed", description: err instanceof Error ? err.message : "Test send failed. Check your token and channels.", variant: "destructive" });
+    }
   };
 
   const handleFetchDMs = async () => {
     if (!aiToken) { toast({ title: "No token", description: "Enter a token above.", variant: "destructive" }); return; }
     try {
-      const result = await fetchDMsMutation.mutateAsync({ data: { token: aiToken } });
-      setDMs(result);
+      const raw = await fetchDMsMutation.mutateAsync({ data: { token: aiToken } });
+      // Backend now returns { dms, fetchFailures, total } — handle both old array and new object format
+      let dmsData: DMConversation[];
+      let failures = 0;
+      if (Array.isArray(raw)) {
+        dmsData = raw;
+      } else {
+        const obj = raw as unknown as { dms?: DMConversation[]; fetchFailures?: number };
+        dmsData = obj.dms ?? [];
+        failures = obj.fetchFailures ?? 0;
+      }
+      setDMs(dmsData);
+      if (failures > 0) {
+        toast({ title: "Partial load", description: `${dmsData.length} conversation${dmsData.length !== 1 ? "s" : ""} loaded. ${failures} channel${failures !== 1 ? "s" : ""} failed to fetch.` });
+      }
     } catch { toast({ title: "Error", description: "Could not fetch DMs. Check your token.", variant: "destructive" }); }
   };
 

@@ -6,23 +6,19 @@ import { discordHeaders, pickStableUA } from "./lib/discord-headers";
 const MAX_CONSECUTIVE_FAILURES = 5;
 
 /* ─── Rotation state ─────────────────────────────────────────────────────── */
-// All running campaigns share one rotation queue. The scheduler fires them
-// one at a time in order, cycling through indefinitely.
-const rotationQueue: number[] = [];   // campaign IDs in rotation order
-let rotationCursor = 0;               // next index to fire
+const rotationQueue: number[] = [];
+let rotationCursor = 0;
 let rotationActive = false;
 let rotationTimer: ReturnType<typeof setTimeout> | null = null;
-const nextRunAt = new Map<number, number>();
 
-// Per-campaign bookkeeping for stats / UI
+// Per-campaign bookkeeping
 const sendCounts    = new Map<number, number>();
 const nextSendTimes = new Map<number, Date>();
 
-/* ─── Helpers ────────────────────────────────────────────────────────────── */
-function pickUA(token: string): string {
-  return pickStableUA(token);
-}
+// Cancellation: campaigns added here will abort their current cycle ASAP
+const cancelledCampaigns = new Set<number>();
 
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
 function humanDelay(min = 400, max = 2200): Promise<void> {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
 }
@@ -76,6 +72,49 @@ async function writeLog(
   }
 }
 
+/* ─── Send window helpers ────────────────────────────────────────────────── */
+export function parseHHMM(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const raw = s.trim().toLowerCase();
+  const m12 = /^(\d{1,2}):(\d{2})\s*([ap]m)$/.exec(raw);
+  if (m12) {
+    let h = parseInt(m12[1], 10) % 12;
+    const min = parseInt(m12[2], 10);
+    if (min < 0 || min > 59) return null;
+    if (m12[3] === "pm") h += 12;
+    return h * 60 + min;
+  }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function getSgtMinutesNow(): number {
+  const now = new Date();
+  return ((now.getUTCHours() + 8) % 24) * 60 + now.getUTCMinutes();
+}
+
+function isWithinSendWindow(start: string | null | undefined, end: string | null | undefined): boolean {
+  const startMin = parseHHMM(start);
+  const endMin   = parseHHMM(end);
+  if (startMin === null || endMin === null) return true;
+  const currentMin = getSgtMinutesNow();
+  if (startMin <= endMin) return currentMin >= startMin && currentMin < endMin;
+  return currentMin >= startMin || currentMin < endMin;
+}
+
+function minutesUntilWindowOpen(start: string | null | undefined): number {
+  const startMin = parseHHMM(start);
+  if (startMin === null) return 0;
+  const currentMin = getSgtMinutesNow();
+  const diff       = startMin - currentMin;
+  return diff > 0 ? diff : diff + 24 * 60;
+}
+
+/* ─── Public send helper ─────────────────────────────────────────────────── */
 export async function doSend(
   token: string,
   channelId: string,
@@ -103,55 +142,7 @@ export async function doSend(
   return { ok: res.ok, status: res.status, retryAfterMs };
 }
 
-/* ─── Send window helpers ────────────────────────────────────────────────── */
-function parseHHMM(s: string | null | undefined): number | null {
-  if (!s) return null;
-  const raw = s.trim().toLowerCase();
-  const m12 = /^(\d{1,2}):(\d{2})\s*([ap]m)$/.exec(raw);
-  if (m12) {
-    let h = parseInt(m12[1], 10) % 12;
-    const min = parseInt(m12[2], 10);
-    if (min < 0 || min > 59) return null;
-    if (m12[3] === "pm") h += 12;
-    return h * 60 + min;
-  }
-  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
-  if (!m) return null;
-  const h = parseInt(m[1], 10);
-  const min = parseInt(m[2], 10);
-  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
-  return h * 60 + min;
-}
-
-function getSgtMinutesNow(): number {
-  const now = new Date();
-  return ((now.getUTCHours() + 8) % 24) * 60 + now.getUTCMinutes();
-}
-
-function isWithinSendWindow(start: string | null | undefined, end: string | null | undefined): boolean {
-  const startMin = parseHHMM(start);
-  const endMin   = parseHHMM(end);
-  if (startMin === null || endMin === null) return true; // no window = always active
-  const currentMin = getSgtMinutesNow();
-  if (startMin <= endMin) return currentMin >= startMin && currentMin < endMin;
-  // wraps midnight: e.g. 22:00 → 06:00
-  return currentMin >= startMin || currentMin < endMin;
-}
-
-function minutesUntilWindowOpen(start: string | null | undefined): number {
-  const startMin = parseHHMM(start);
-  if (startMin === null) return 0;
-  const currentMin = getSgtMinutesNow();
-  const diff       = startMin - currentMin;
-  return diff > 0 ? diff : diff + 24 * 60;
-}
-
 /* ─── Core: execute one campaign send cycle ──────────────────────────────── */
-/**
- * Fires one send cycle for the given campaign.
- * Returns the milliseconds to wait before triggering the NEXT rotation step,
- * and whether the campaign should be removed from the queue.
- */
 async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remove: boolean }> {
   const [campaign] = await db
     .select()
@@ -159,11 +150,12 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     .where(eq(campaignsTable.id, id))
     .limit(1);
 
-  if (!campaign || !campaign.running) {
+  if (!campaign || !campaign.running || cancelledCampaigns.has(id)) {
+    cancelledCampaigns.delete(id);
     return { nextMs: 0, remove: true };
   }
 
-  // Send window enforcement — skip this campaign, rotate quickly to the next
+  // Send window enforcement
   if (!isWithinSendWindow(campaign.sendWindowStart, campaign.sendWindowEnd)) {
     const waitMins = minutesUntilWindowOpen(campaign.sendWindowStart);
     await writeLog(
@@ -183,9 +175,15 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
   let failed = 0;
   let rateLimited = false;
   let retryAfterMs = 0;
-  const ua = pickUA(campaign.token);
+  const ua = pickStableUA(campaign.token);
 
   for (let i = 0; i < campaign.channels.length; i++) {
+    // Check cancellation before every channel send
+    if (cancelledCampaigns.has(id)) {
+      cancelledCampaigns.delete(id);
+      return { nextMs: 0, remove: true };
+    }
+
     const channelId = campaign.channels[i];
     if (i > 0) await humanDelay(600, 2500);
 
@@ -226,7 +224,6 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     newRateLimitBonus = 0;
   }
 
-  // Consecutive failure tracking / auto-stop
   const allFailed = sent === 0 && failed > 0;
   const newConsecutiveFailures = allFailed ? campaign.consecutiveFailures + 1 : 0;
 
@@ -264,7 +261,13 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     })
     .where(eq(campaignsTable.id, id));
 
-  // Verify still running after DB write
+  // Verify still running after DB write; check cancellation again
+  if (cancelledCampaigns.has(id)) {
+    cancelledCampaigns.delete(id);
+    await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+    return { nextMs: 0, remove: true };
+  }
+
   const [fresh] = await db
     .select({ running: campaignsTable.running })
     .from(campaignsTable)
@@ -273,7 +276,7 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
 
   if (!fresh?.running) return { nextMs: 0, remove: true };
 
-  // Compute delay until the next rotation step fires
+  // Compute next delay — always measured from NOW (after cycle finishes)
   let nextMs = (campaign.delay + newRateLimitBonus) * 1000;
   if (campaign.jitter > 0) {
     nextMs += (campaign.delay * 1000 * Math.random() * campaign.jitter) / 100;
@@ -308,12 +311,25 @@ async function runRotationStep(): Promise<void> {
 
   rotationActive = true;
 
-  // Pick next campaign in the queue
   if (rotationCursor >= rotationQueue.length) rotationCursor = 0;
   const id = rotationQueue[rotationCursor];
   rotationCursor = (rotationCursor + 1) % rotationQueue.length;
 
-  const { nextMs, remove } = await executeCampaignCycle(id);
+  let nextMs = 2000;
+  let remove = false;
+
+  try {
+    const result = await executeCampaignCycle(id);
+    nextMs = result.nextMs;
+    remove = result.remove;
+  } catch (err) {
+    logger.error({ err, campaignId: id }, "Scheduler: unhandled error in campaign cycle — removing from queue to prevent loop");
+    remove = true;
+    try {
+      await writeLog(id, "error", "Internal scheduler error — campaign paused", undefined, err instanceof Error ? err.message : String(err), "The campaign was paused due to an unexpected error. Restart it to resume.");
+      await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+    } catch {}
+  }
 
   if (remove) {
     const idx = rotationQueue.indexOf(id);
@@ -324,30 +340,27 @@ async function runRotationStep(): Promise<void> {
     }
     sendCounts.delete(id);
     nextSendTimes.delete(id);
-    nextRunAt.delete(id);
 
     if (rotationQueue.length === 0) {
       rotationActive = false;
       rotationTimer  = null;
       return;
     }
-    // Continue quickly to next campaign
     rotationTimer = setTimeout(runRotationStep, 500);
     return;
   }
 
-  const now = Date.now();
-  const targetAt = nextRunAt.get(id) ?? now + nextMs;
-  nextRunAt.set(id, targetAt + nextMs);
-  nextSendTimes.set(id, new Date(targetAt));
-  scheduleNextRotationStep(Math.max(0, targetAt - now));
+  // Next send waits full interval measured from RIGHT NOW (after cycle completes)
+  const nextAt = Date.now() + nextMs;
+  nextSendTimes.set(id, new Date(nextAt));
+  scheduleNextRotationStep(nextMs);
 }
 
 /* ─── Public API ─────────────────────────────────────────────────────────── */
 export function startCampaignSchedule(id: number): void {
+  cancelledCampaigns.delete(id); // clear any pending cancellation
   if (!rotationQueue.includes(id)) {
     rotationQueue.push(id);
-    nextRunAt.set(id, Date.now());
     logger.info({ campaignId: id, queueLength: rotationQueue.length }, "Campaign added to rotation");
   }
   if (!rotationActive) {
@@ -356,6 +369,9 @@ export function startCampaignSchedule(id: number): void {
 }
 
 export function stopCampaignSchedule(id: number): void {
+  // Signal immediate cancellation — checked before each channel send
+  cancelledCampaigns.add(id);
+
   const idx = rotationQueue.indexOf(id);
   if (idx !== -1) {
     rotationQueue.splice(idx, 1);
@@ -365,9 +381,7 @@ export function stopCampaignSchedule(id: number): void {
   }
   sendCounts.delete(id);
   nextSendTimes.delete(id);
-  nextRunAt.delete(id);
 
-  // If queue is now empty, cancel the timer
   if (rotationQueue.length === 0 && rotationTimer) {
     clearTimeout(rotationTimer);
     rotationTimer  = null;
