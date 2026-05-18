@@ -1,0 +1,45 @@
+Audit and fix all user-facing website functionality/efficiency bugs. Exclude personal-data/privacy-only fixes for now. Do not refactor unrelated code.
+
+Inspect:
+- artifacts/api-server/src/routes/campaigns.ts
+- artifacts/api-server/src/scheduler.ts
+- artifacts/api-server/src/routes/discord.ts
+- artifacts/api-server/src/routes/auto-reply.ts
+- artifacts/api-server/src/lib/auto-reply-scheduler.ts
+- lib/db/src/schema/campaigns.ts
+- artifacts/discord-autosender/src/pages/home.tsx
+- artifacts/api-server/package.json
+
+Fix:
+1. Create Campaign DB insert failure: ensure campaignsTable schema matches live DB and add/run migration for missing columns.
+2. Add migration script if missing.
+3. Do not show raw SQL errors in frontend. Return clean user-friendly errors.
+4. Fix PUT /campaigns/:id so missing fields do not overwrite existing values.
+5. Only update channels if "channels" exists in req.body.
+6. Replace truthy update checks with "field in req.body" checks.
+7. Duplicate campaign must copy all relevant settings like rotateEnabled, but reset runtime stats.
+8. Start campaign must validate token, channels, message, delay, and send window before setting running=true.
+9. handleStart must not ignore save failure before starting.
+10. Fix scheduler nextRunAt so next send waits full interval after current cycle finishes.
+11. Stop must prevent further sends ASAP by checking campaign running/cancel flag before each channel send.
+12. Add top-level try/catch in scheduler loop so one failed cycle does not break scheduler.
+13. Validate sendWindowStart/sendWindowEnd. Invalid time should block save/start, not become 24/7.
+14. Validate channel IDs: digits only and valid Discord snowflake length.
+15. Validate message is not empty and not too long.
+16. Validate delay and jitter with clear errors.
+17. Fix frontend errors for create/update/start/stop/test to read backend error JSON/text.
+18. Test Send should warn/save first if there are unsaved draft changes.
+19. Fix /send-messages to parse JSON or text safely; do not mislabel non-JSON Discord errors as Network error.
+20. Handle 429 rate limit using retry_after consistently.
+21. Move AI model to env var OPENAI_MODEL with fallback and clear error.
+22. Improve AI reply error response so user knows if AI, Discord, or network failed.
+23. Stop silently skipping DM fetch failures; return partial failure count/details.
+24. Validate auto-reply settings: max replies, active hours, trigger keywords.
+25. Auto-reply stop should cancel pending waits/sends as quickly as possible.
+26. Auto-reply active hours should use selected timezone or SGT consistently.
+27. Auto-reply OpenAI failures should be logged and visible in status/errors.
+28. Remove or merge duplicate old auto-reply/session routes if they are unused.
+29. Ensure drafts refresh when campaign server data changes, not only when IDs change.
+
+Run typecheck/build.
+Reply only with changed files and test result.
