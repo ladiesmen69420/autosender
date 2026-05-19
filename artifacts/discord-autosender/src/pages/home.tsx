@@ -724,14 +724,14 @@ export default function Home() {
   const [activeView, setActiveView] = useLocalState<View>("bb_view", "dashboard");
 
   const [drafts, setDrafts] = useLocalState<Record<number | string, {
-    name: string; token: string; channelsInput: string; message: string; mentionsInput?: string;
+    name: string; token: string; channelsInput: string; message: string; commandsEnabled?: boolean;
     delay: number; jitter: number; expanded: boolean; editMode: boolean; tokenValid: boolean | null;
     sendWindowStart: string; sendWindowEnd: string;
     rotateEnabled: boolean;
   }>>("bb_drafts", {});
 
   const [showNewForm, setShowNewForm] = useState(false);
-  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", mentionsInput: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
+  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", commandsEnabled: false, delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
 
   const [tokenInput, setTokenInput] = useLocalState("bb_token_input", "");
   const [tokenInfo, setTokenInfo] = useLocalState<TokenValidationResult | null>("bb_token_info", null);
@@ -888,11 +888,10 @@ export default function Home() {
     const sendWindowStart = normalizeSendWindow(newForm.sendWindowStart);
     const sendWindowEnd = normalizeSendWindow(newForm.sendWindowEnd);
     try {
-    const mentions = newForm.mentionsInput.split(/[\n,]/).map((v) => v.trim()).filter(Boolean);
-    const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: newForm.rotateEnabled, mentions } as Parameters<typeof createCampaign.mutateAsync>[0]);
-      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, mentionsInput: newForm.mentionsInput, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd, rotateEnabled: newForm.rotateEnabled });
+    const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: newForm.rotateEnabled } as Parameters<typeof createCampaign.mutateAsync>[0]);
+      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, commandsEnabled: newForm.commandsEnabled, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd, rotateEnabled: newForm.rotateEnabled });
       setShowNewForm(false);
-      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", mentionsInput: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
+      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", commandsEnabled: false, delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
       toast({ title: "Campaign Created", description: created.name });
     } catch (err) { toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to create campaign.", variant: "destructive" }); }
   };
@@ -904,8 +903,7 @@ export default function Home() {
     const sendWindowStart = normalizeSendWindow(draft.sendWindowStart);
     const sendWindowEnd = normalizeSendWindow(draft.sendWindowEnd);
     try {
-      const mentions = draft.mentionsInput?.split(/[\n,]/).map((v) => v.trim()).filter(Boolean) ?? [];
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled, mentions } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       setDraft(id, { editMode: false });
       toast({ title: "Saved", description: "Changes will take effect on next send cycle." });
     } catch (err) {
@@ -920,8 +918,7 @@ export default function Home() {
       const sendWindowStart = normalizeSendWindow(draft.sendWindowStart);
       const sendWindowEnd = normalizeSendWindow(draft.sendWindowEnd);
       try {
-        const mentions = draft.mentionsInput?.split(/[\n,]/).map((v) => v.trim()).filter(Boolean) ?? [];
-        await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled, mentions } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+        await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       } catch (err) {
         toast({ title: "Save Failed — Campaign Not Started", description: err instanceof Error ? err.message : "Failed to save before starting.", variant: "destructive" });
         return;
@@ -972,8 +969,7 @@ export default function Home() {
         const channels = draft!.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
         const sendWindowStart = normalizeSendWindow(draft!.sendWindowStart);
         const sendWindowEnd = normalizeSendWindow(draft!.sendWindowEnd);
-        const mentions = draft!.mentionsInput?.split(/[\n,]/).map((v) => v.trim()).filter(Boolean) ?? [];
-        await updateCampaign.mutateAsync({ id, name: draft!.name, token: draft!.token, channels, message: draft!.message, delay: draft!.delay, jitter: draft!.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft!.rotateEnabled, mentions } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+        await updateCampaign.mutateAsync({ id, name: draft!.name, token: draft!.token, channels, message: draft!.message, delay: draft!.delay, jitter: draft!.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft!.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
         setDraft(id, { editMode: false });
       } catch (err) {
         toast({ title: "Save Failed", description: err instanceof Error ? err.message : "Could not save before testing.", variant: "destructive" });
@@ -1343,10 +1339,6 @@ export default function Home() {
                       <Textarea value={newForm.channelsInput} onChange={(e) => setNewForm((p) => ({ ...p, channelsInput: e.target.value }))} className="min-h-[60px] font-mono text-xs resize-y bg-input border-border rounded-xl" placeholder="One per line or comma separated..." />
                     </div>
                     <div>
-                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Ping specific users</Label>
-                      <Textarea value={newForm.mentionsInput} onChange={(e) => setNewForm((p) => ({ ...p, mentionsInput: e.target.value }))} className="min-h-[60px] font-mono text-xs resize-y bg-input border-border rounded-xl" placeholder="Discord user IDs, one per line or comma separated..." />
-                    </div>
-                    <div>
                       <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Message</Label>
                       <Textarea value={newForm.message} onChange={(e) => setNewForm((p) => ({ ...p, message: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Message to send..." />
                     </div>
@@ -1363,6 +1355,18 @@ export default function Home() {
                         </div>
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1">Use times like 9:00 AM or 5:30 PM. Leave empty to send 24/7.</p>
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Commands</Label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={newForm.commandsEnabled ? "default" : "outline"}
+                        className={`h-8 px-3 text-xs rounded-xl ${newForm.commandsEnabled ? "bg-primary/80 hover:bg-primary text-white" : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}
+                        onClick={() => setNewForm((p) => ({ ...p, commandsEnabled: !p.commandsEnabled }))}
+                      >
+                        {newForm.commandsEnabled ? "On" : "Off"}
+                      </Button>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
