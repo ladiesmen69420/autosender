@@ -256,7 +256,10 @@ router.post("/send-messages", async (req, res) => {
         {
           method: "POST",
           headers: discordHeaders(token),
-          body: JSON.stringify({ content: message }),
+          body: JSON.stringify({
+            content: message,
+            allowed_mentions: { parse: ["users", "roles", "everyone"] },
+          }),
         },
       );
 
@@ -431,7 +434,10 @@ router.post("/ai-reply", async (req, res) => {
         {
           method: "POST",
           headers: discordHeaders(token),
-          body: JSON.stringify({ content: reply }),
+          body: JSON.stringify({
+            content: reply,
+            allowed_mentions: { parse: ["users", "roles", "everyone"] },
+          }),
         },
       );
       sent = sendRes.ok;
@@ -602,7 +608,10 @@ router.post("/auto-reply", async (req, res) => {
           {
             method: "POST",
             headers: discordHeaders(token),
-            body: JSON.stringify({ content: reply }),
+            body: JSON.stringify({
+              content: reply,
+              allowed_mentions: { parse: ["users", "roles", "everyone"] },
+            }),
           },
         );
 
