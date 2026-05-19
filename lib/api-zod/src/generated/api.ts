@@ -38,6 +38,7 @@ export const SendMessagesBody = zod.object({
   token: zod.string(),
   channels: zod.array(zod.string()),
   message: zod.string(),
+  mentions: zod.array(zod.string()).optional(),
 });
 
 export const SendMessagesResponse = zod.object({

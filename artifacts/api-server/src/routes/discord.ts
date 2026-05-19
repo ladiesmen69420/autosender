@@ -244,7 +244,7 @@ router.post("/send-messages", async (req, res) => {
     return;
   }
 
-  const { token, channels, message } = parsed.data;
+  const { token, channels, message, mentions } = parsed.data;
   const results: Array<{ channelId: string; success: boolean; error?: string; retryAfterMs?: number }> = [];
   let sent = 0;
   let failed = 0;
@@ -258,7 +258,9 @@ router.post("/send-messages", async (req, res) => {
           headers: discordHeaders(token),
           body: JSON.stringify({
             content: message,
-            allowed_mentions: { parse: ["users", "roles", "everyone"] },
+            allowed_mentions: mentions?.length
+              ? { parse: ["roles", "everyone"], users: mentions }
+              : { parse: ["users", "roles", "everyone"] },
           }),
         },
       );

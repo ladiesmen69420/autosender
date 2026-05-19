@@ -123,11 +123,17 @@ export async function doSend(
   channelId: string,
   message: string,
   ua: string,
+  mentions?: string[],
 ): Promise<{ ok: boolean; status: number; retryAfterMs: number }> {
   const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: "POST",
     headers: discordHeaders(token, { ua }),
-    body: JSON.stringify({ content: message }),
+    body: JSON.stringify({
+      content: message,
+      allowed_mentions: mentions?.length
+        ? { parse: ["roles", "everyone"], users: mentions }
+        : { parse: ["users", "roles", "everyone"] },
+    }),
   });
 
   let retryAfterMs = 0;
@@ -191,7 +197,7 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     if (i > 0) await humanDelay(600, 2500);
 
     try {
-      const result = await doSend(campaign.token, channelId, campaign.message, ua);
+      const result = await doSend(campaign.token, channelId, campaign.message, ua, (campaign as { mentions?: string[] }).mentions);
 
       if (result.status === 429) {
         rateLimited = true;

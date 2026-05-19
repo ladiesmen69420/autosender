@@ -421,7 +421,7 @@ router.post("/:id/test-send", async (req, res) => {
 
   for (const channelId of campaign.channels) {
     try {
-      const result = await doSend(campaign.token, channelId, `[TEST] ${campaign.message}`, ua);
+      const result = await doSend(campaign.token, channelId, `[TEST] ${campaign.message}`, ua, (campaign as { mentions?: string[] }).mentions);
 
       let errorMsg: string | undefined;
       let suggestion: string | undefined;
