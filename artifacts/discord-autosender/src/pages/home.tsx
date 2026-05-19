@@ -1549,7 +1549,14 @@ export default function Home() {
                                 <div>Round-robin rotation</div>
                                 <div className="opacity-60">{draft.rotateEnabled ? "On — takes turns with other campaigns" : "Off — sends independently"}</div>
                               </div>
-                              <Switch checked={draft.rotateEnabled} onCheckedChange={(v) => setDraft(campaign.id, { rotateEnabled: v })} />
+                              <Button
+                                size="sm"
+                                variant={draft.rotateEnabled ? "default" : "outline"}
+                                className={`h-8 px-3 text-xs rounded-xl shrink-0 ${draft.rotateEnabled ? "bg-primary/80 hover:bg-primary" : "border-border hover:border-primary/40"}`}
+                                onClick={() => setDraft(campaign.id, { rotateEnabled: !draft.rotateEnabled })}
+                              >
+                                {draft.rotateEnabled ? "Rotation On" : "Rotation Off"}
+                              </Button>
                             </div>
                           </div>
                           <Button size="sm" variant="default" className="w-full h-8 text-xs bg-primary/80 hover:bg-primary rounded-xl"
