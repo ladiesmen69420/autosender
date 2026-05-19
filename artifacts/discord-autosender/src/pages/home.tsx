@@ -1543,9 +1543,12 @@ export default function Home() {
                             <div>✓ Random User-Agent per request</div>
                             <div>✓ Human-like delays 0.6–2.5s between channels</div>
                             <div>✓ Burst break every 15 cycles (+30–90s pause)</div>
-                            <div>✓ Campaigns send in round-robin rotation — one at a time</div>
+                            <div>{draft.rotateEnabled ? "✓ Shares round-robin queue with other rotating campaigns" : "✓ Runs on its own independent timer (ignores other campaigns)"}</div>
                             <div className="flex items-center justify-between gap-3 pt-1">
-                              <span>Include in rotation</span>
+                              <div>
+                                <div>Round-robin rotation</div>
+                                <div className="opacity-60">{draft.rotateEnabled ? "On — takes turns with other campaigns" : "Off — sends independently"}</div>
+                              </div>
                               <Switch checked={draft.rotateEnabled} onCheckedChange={(v) => setDraft(campaign.id, { rotateEnabled: v })} />
                             </div>
                           </div>

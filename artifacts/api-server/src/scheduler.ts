@@ -18,6 +18,9 @@ const nextSendTimes = new Map<number, Date>();
 // Cancellation: campaigns added here will abort their current cycle ASAP
 const cancelledCampaigns = new Set<number>();
 
+// Independent (non-rotating) campaign timers — each runs on its own schedule
+const independentTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 function humanDelay(min = 400, max = 2200): Promise<void> {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
@@ -356,6 +359,52 @@ async function runRotationStep(): Promise<void> {
   scheduleNextRotationStep(nextMs);
 }
 
+/* ─── Independent (non-rotating) scheduler ───────────────────────────────── */
+async function runIndependentCycle(id: number): Promise<void> {
+  if (!independentTimers.has(id)) return; // stopped while waiting
+
+  let nextMs = 5000;
+  let remove = false;
+
+  try {
+    const result = await executeCampaignCycle(id);
+    nextMs = result.nextMs;
+    remove = result.remove;
+  } catch (err) {
+    logger.error({ err, campaignId: id }, "Independent scheduler: unhandled error — stopping campaign");
+    remove = true;
+    try {
+      await writeLog(id, "error", "Internal scheduler error — campaign paused", undefined, err instanceof Error ? err.message : String(err), "The campaign was paused due to an unexpected error. Restart it to resume.");
+      await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+    } catch {}
+  }
+
+  if (remove || !independentTimers.has(id)) {
+    independentTimers.delete(id);
+    sendCounts.delete(id);
+    nextSendTimes.delete(id);
+    return;
+  }
+
+  const nextAt = Date.now() + nextMs;
+  nextSendTimes.set(id, new Date(nextAt));
+
+  const timer = setTimeout(() => { runIndependentCycle(id).catch(() => {}); }, Math.max(0, nextMs));
+  independentTimers.set(id, timer);
+}
+
+export function startIndependentSchedule(id: number): void {
+  cancelledCampaigns.delete(id);
+  // Clear any existing independent timer for this campaign
+  const existing = independentTimers.get(id);
+  if (existing !== undefined) clearTimeout(existing);
+
+  logger.info({ campaignId: id }, "Campaign started on independent schedule");
+  // Use a sentinel so runIndependentCycle knows it's active before first tick
+  const timer = setTimeout(() => { runIndependentCycle(id).catch(() => {}); }, 100);
+  independentTimers.set(id, timer);
+}
+
 /* ─── Public API ─────────────────────────────────────────────────────────── */
 export function startCampaignSchedule(id: number): void {
   cancelledCampaigns.delete(id); // clear any pending cancellation
@@ -372,6 +421,7 @@ export function stopCampaignSchedule(id: number): void {
   // Signal immediate cancellation — checked before each channel send
   cancelledCampaigns.add(id);
 
+  // Remove from rotation queue if present
   const idx = rotationQueue.indexOf(id);
   if (idx !== -1) {
     rotationQueue.splice(idx, 1);
@@ -379,6 +429,15 @@ export function stopCampaignSchedule(id: number): void {
     if (rotationCursor >= rotationQueue.length) rotationCursor = 0;
     logger.info({ campaignId: id, queueLength: rotationQueue.length }, "Campaign removed from rotation");
   }
+
+  // Stop independent timer if present
+  const indTimer = independentTimers.get(id);
+  if (indTimer !== undefined) {
+    clearTimeout(indTimer);
+    independentTimers.delete(id);
+    logger.info({ campaignId: id }, "Campaign stopped from independent schedule");
+  }
+
   sendCounts.delete(id);
   nextSendTimes.delete(id);
 
@@ -390,7 +449,7 @@ export function stopCampaignSchedule(id: number): void {
 }
 
 export function isRunning(id: number): boolean {
-  return rotationQueue.includes(id);
+  return rotationQueue.includes(id) || independentTimers.has(id);
 }
 
 export function getNextSendAt(id: number): Date | null {
@@ -399,12 +458,16 @@ export function getNextSendAt(id: number): Date | null {
 
 export async function initScheduler(): Promise<void> {
   const running = await db
-    .select({ id: campaignsTable.id })
+    .select({ id: campaignsTable.id, rotateEnabled: campaignsTable.rotateEnabled })
     .from(campaignsTable)
     .where(eq(campaignsTable.running, true));
 
-  for (const { id } of running) {
-    startCampaignSchedule(id);
+  for (const row of running) {
+    if (row.rotateEnabled) {
+      startCampaignSchedule(row.id);
+    } else {
+      startIndependentSchedule(row.id);
+    }
   }
 
   logger.info({ count: running.length }, "Scheduler initialized");
@@ -415,7 +478,11 @@ export async function syncRotationCampaigns(): Promise<void> {
     .select({ id: campaignsTable.id, running: campaignsTable.running, rotateEnabled: campaignsTable.rotateEnabled })
     .from(campaignsTable);
   for (const row of rows) {
-    if (row.running && row.rotateEnabled) startCampaignSchedule(row.id);
-    else stopCampaignSchedule(row.id);
+    if (row.running) {
+      if (row.rotateEnabled) startCampaignSchedule(row.id);
+      else startIndependentSchedule(row.id);
+    } else {
+      stopCampaignSchedule(row.id);
+    }
   }
 }

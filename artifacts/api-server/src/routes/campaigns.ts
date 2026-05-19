@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
 import { eq, and, gte, desc, or, isNull } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
-import { startCampaignSchedule, stopCampaignSchedule, getNextSendAt, doSend } from "../scheduler";
+import { startCampaignSchedule, startIndependentSchedule, stopCampaignSchedule, getNextSendAt, doSend } from "../scheduler";
 import { pickStableUA } from "../lib/discord-headers";
 
 const router = Router();
@@ -351,7 +351,11 @@ router.post("/:id/start", async (req, res) => {
 
     if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
 
-    startCampaignSchedule(id);
+    if (campaign.rotateEnabled) {
+      startCampaignSchedule(id);
+    } else {
+      startIndependentSchedule(id);
+    }
     const sentToday = await getSentToday(id);
     res.json(serializeCampaign(row, sentToday));
   } catch (err) {
