@@ -1436,6 +1436,16 @@ export default function Home() {
                           {campaign.running ? <><Square className="w-3 h-3 mr-1 fill-current" />Stop</> : <><Play className="w-3 h-3 mr-1 fill-current" />Start</>}
                         </Button>
 
+                        <Button
+                          size="sm"
+                          variant={draft.rotateEnabled ? "default" : "outline"}
+                          className={`h-7 px-2.5 text-xs font-medium rounded-xl ${draft.rotateEnabled ? "bg-primary/80 hover:bg-primary text-white" : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}
+                          onClick={() => setDraft(campaign.id, { rotateEnabled: !draft.rotateEnabled })}
+                          title={draft.rotateEnabled ? "Included in rotation" : "Runs independently"}
+                        >
+                          {draft.rotateEnabled ? "Rotating" : "Independent"}
+                        </Button>
+
                         {/* Edit button */}
                         <Button size="sm" variant="ghost" className={`h-7 px-2.5 text-xs ${inEditMode ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
                           onClick={() => setDraft(campaign.id, { editMode: !inEditMode, expanded: true })}>
@@ -1544,20 +1554,6 @@ export default function Home() {
                             <div>✓ Human-like delays 0.6–2.5s between channels</div>
                             <div>✓ Burst break every 15 cycles (+30–90s pause)</div>
                             <div>{draft.rotateEnabled ? "✓ Shares round-robin queue with other rotating campaigns" : "✓ Runs on its own independent timer (ignores other campaigns)"}</div>
-                            <div className="flex items-center justify-between gap-3 pt-1">
-                              <div>
-                                <div>Round-robin rotation</div>
-                                <div className="opacity-60">{draft.rotateEnabled ? "On — takes turns with other campaigns" : "Off — sends independently"}</div>
-                              </div>
-                              <Button
-                                size="sm"
-                                variant={draft.rotateEnabled ? "default" : "outline"}
-                                className={`h-8 px-3 text-xs rounded-xl shrink-0 ${draft.rotateEnabled ? "bg-primary/80 hover:bg-primary" : "border-border hover:border-primary/40"}`}
-                                onClick={() => setDraft(campaign.id, { rotateEnabled: !draft.rotateEnabled })}
-                              >
-                                {draft.rotateEnabled ? "Rotation On" : "Rotation Off"}
-                              </Button>
-                            </div>
                           </div>
                           <Button size="sm" variant="default" className="w-full h-8 text-xs bg-primary/80 hover:bg-primary rounded-xl"
                             onClick={() => handleSaveCampaign(campaign.id)} disabled={updateCampaign.isPending}>
