@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import logoUrl from "/logo.png";
 
-type View = "dashboard" | "autosender" | "commands" | "ai-reply" | "tokens" | "logs";
+type View = "dashboard" | "autosender" | "ai-reply" | "tokens" | "logs";
 
 type ServerCampaign = {
   id: number; name: string; token: string; channels: string[];
@@ -1179,11 +1179,10 @@ export default function Home() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="border-b border-border bg-card/40 px-6 py-3.5 flex items-center justify-between shrink-0">
           <div>
-            <h1 className="text-base font-semibold text-foreground capitalize">{activeView === "ai-reply" ? "AI Reply" : activeView === "commands" ? "Commands" : activeView}</h1>
+            <h1 className="text-base font-semibold text-foreground capitalize">{activeView === "ai-reply" ? "AI Reply" : activeView}</h1>
             <p className="text-xs text-muted-foreground">
               {activeView === "dashboard" && "Discord automation command center"}
               {activeView === "autosender" && `Server-side scheduling — ${runningCount} active, runs offline`}
-              {activeView === "commands" && "Commands page for command-enabled campaigns"}
               {activeView === "ai-reply" && "Generate context-aware DM replies with AI"}
               {activeView === "tokens" && "Validate and manage Discord user tokens"}
             </p>
@@ -1359,19 +1358,7 @@ export default function Home() {
                     </div>
                     <div>
                       <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Commands</Label>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={newForm.commandsEnabled ? "default" : "outline"}
-                        className={`h-8 px-3 text-xs rounded-xl ${newForm.commandsEnabled ? "bg-primary/80 hover:bg-primary text-white" : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"}`}
-                        onClick={() => {
-                          const next = !newForm.commandsEnabled;
-                          setNewForm((p) => ({ ...p, commandsEnabled: next }));
-                          setActiveView(next ? "commands" : "autosender");
-                        }}
-                      >
-                        {newForm.commandsEnabled ? "On" : "Off"}
-                      </Button>
+                      <Textarea value={newForm.message} onChange={(e) => setNewForm((p) => ({ ...p, message: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Commands to send..." />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1604,23 +1591,6 @@ export default function Home() {
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {activeView === "commands" && (
-            <div className="max-w-4xl space-y-4">
-              <div className="rounded-xl border border-border bg-card/60 p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Bot className="w-3.5 h-3.5 text-primary" />Commands</h3>
-                    <p className="text-[10px] text-muted-foreground mt-1">This page opens when Commands is switched on.</p>
-                  </div>
-                  <Button size="sm" variant="outline" className="rounded-xl" onClick={() => setActiveView("autosender")}>Back</Button>
-                </div>
-                <div className="rounded-xl border border-border bg-background/30 p-4 text-sm">
-                  Command mode is ready. Turn Commands on in AutoSender to keep campaigns grouped here.
-                </div>
-              </div>
             </div>
           )}
 
