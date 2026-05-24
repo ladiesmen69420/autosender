@@ -2,6 +2,22 @@ import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./lib/logger";
 import { discordHeaders, pickStableUA } from "./lib/discord-headers";
+import { discordFetch } from "./lib/discord-fetch";
+
+const CHANNEL_ID_RE = /^\d{15,20}$/;
+const TRANSIENT_NETWORK_ERRORS = ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"];
+
+function isTransientNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code ?? "";
+  if (TRANSIENT_NETWORK_ERRORS.some((c) => code.includes(c))) return true;
+  const msg = err.message.toLowerCase();
+  return msg.includes("socket hang up") || msg.includes("network timeout") || msg.includes("fetch failed");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 const MAX_CONSECUTIVE_FAILURES = 5;
 
@@ -118,6 +134,10 @@ function minutesUntilWindowOpen(start: string | null | undefined): number {
 }
 
 /* ─── Public send helper ─────────────────────────────────────────────────── */
+
+const MAX_NETWORK_RETRIES = 3;
+const MAX_SERVER_ERROR_RETRIES = 2;
+
 export async function doSend(
   token: string,
   channelId: string,
@@ -125,30 +145,71 @@ export async function doSend(
   ua: string,
   mentions?: string[],
 ): Promise<{ ok: boolean; status: number; retryAfterMs: number }> {
-  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-    method: "POST",
-    headers: discordHeaders(token, { ua }),
-    body: JSON.stringify({
-      content: message,
-      allowed_mentions: mentions?.length
-        ? { parse: ["roles", "everyone"], users: mentions }
-        : { parse: ["users", "roles", "everyone"] },
-    }),
+  const body = JSON.stringify({
+    content: message,
+    allowed_mentions: mentions?.length
+      ? { parse: ["roles", "everyone"], users: mentions }
+      : { parse: ["users", "roles", "everyone"] },
   });
 
-  let retryAfterMs = 0;
-  if (res.status === 429) {
-    try {
-      const data = (await res.json()) as { retry_after?: number };
-      retryAfterMs = Math.ceil((data.retry_after ?? 1) * 1000);
-    } catch {
-      retryAfterMs = 5000;
-    }
-  } else {
-    try { await res.text(); } catch {}
-  }
+  let networkAttempt = 0;
+  let serverErrorAttempt = 0;
 
-  return { ok: res.ok, status: res.status, retryAfterMs };
+  while (true) {
+    let res: Response;
+    try {
+      res = await discordFetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+        method: "POST",
+        headers: discordHeaders(token, { ua }),
+        body,
+      });
+    } catch (err) {
+      const isTransient = isTransientNetworkError(err);
+      if (isTransient && networkAttempt < MAX_NETWORK_RETRIES) {
+        networkAttempt++;
+        const backoffMs = Math.min(1000 * 2 ** (networkAttempt - 1), 8000);
+        logger.warn(
+          { channelId, attempt: networkAttempt, backoffMs },
+          "Transient network error during send — retrying",
+        );
+        await sleep(backoffMs);
+        continue;
+      }
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { channelId, attempts: networkAttempt + 1, error: errMsg },
+        "Network error sending to Discord channel — not retrying",
+      );
+      throw err;
+    }
+
+    let retryAfterMs = 0;
+
+    if (res.status === 429) {
+      try {
+        const data = (await res.json()) as { retry_after?: number };
+        retryAfterMs = Math.ceil((data.retry_after ?? 1) * 1000);
+      } catch {
+        retryAfterMs = 5000;
+      }
+      return { ok: false, status: 429, retryAfterMs };
+    }
+
+    if (res.status >= 500 && serverErrorAttempt < MAX_SERVER_ERROR_RETRIES) {
+      serverErrorAttempt++;
+      const backoffMs = 2000 * serverErrorAttempt;
+      logger.warn(
+        { channelId, status: res.status, attempt: serverErrorAttempt, backoffMs },
+        "Discord server error — retrying",
+      );
+      try { await res.text(); } catch {}
+      await sleep(backoffMs);
+      continue;
+    }
+
+    try { await res.text(); } catch {}
+    return { ok: res.ok, status: res.status, retryAfterMs: 0 };
+  }
 }
 
 /* ─── Core: execute one campaign send cycle ──────────────────────────────── */
@@ -161,6 +222,36 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
 
   if (!campaign || !campaign.running || cancelledCampaigns.has(id)) {
     cancelledCampaigns.delete(id);
+    return { nextMs: 0, remove: true };
+  }
+
+  // Guard: required config fields must be present and valid before doing anything
+  if (!campaign.token || !campaign.token.trim()) {
+    await writeLog(id, "error", "Campaign stopped — missing Discord token", undefined, "The campaign has no token configured.", "Edit the campaign and add a valid Discord token.");
+    await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+    logger.error({ campaignId: id }, "Campaign stopped — missing token");
+    return { nextMs: 0, remove: true };
+  }
+
+  if (!campaign.message || !campaign.message.trim()) {
+    await writeLog(id, "error", "Campaign stopped — missing message", undefined, "The campaign has no message configured.", "Edit the campaign and add a message.");
+    await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+    logger.error({ campaignId: id }, "Campaign stopped — missing message");
+    return { nextMs: 0, remove: true };
+  }
+
+  if (!Array.isArray(campaign.channels) || campaign.channels.length === 0) {
+    await writeLog(id, "error", "Campaign stopped — no channel IDs configured", undefined, "The campaign has no channels to send to.", "Edit the campaign and add at least one channel ID.");
+    await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+    logger.error({ campaignId: id }, "Campaign stopped — no channels configured");
+    return { nextMs: 0, remove: true };
+  }
+
+  const campaignDelay = Number(campaign.delay);
+  if (!Number.isFinite(campaignDelay) || campaignDelay <= 0) {
+    await writeLog(id, "error", "Campaign stopped — invalid delay value", undefined, `Delay must be a positive number (got: ${campaign.delay}).`, "Edit the campaign and set a valid interval (e.g. 15 seconds).");
+    await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+    logger.error({ campaignId: id, delay: campaign.delay }, "Campaign stopped — invalid delay");
     return { nextMs: 0, remove: true };
   }
 
@@ -194,6 +285,15 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     }
 
     const channelId = campaign.channels[i];
+
+    // Skip channels with invalid IDs rather than letting them fail at Discord
+    if (!channelId || !CHANNEL_ID_RE.test(channelId)) {
+      failed++;
+      await writeLog(id, "error", `Skipped invalid channel ID: "${channelId}"`, channelId ?? undefined, "Channel IDs must be 15–20 digit numbers.", "Remove or correct this channel ID in campaign settings.");
+      logger.warn({ campaignId: id, channelId }, "Skipped invalid channel ID");
+      continue;
+    }
+
     if (i > 0) await humanDelay(600, 2500);
 
     try {
@@ -215,8 +315,8 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     } catch (err) {
       failed++;
       const errMsg = err instanceof Error ? err.message : String(err);
-      await writeLog(id, "error", `Network error sending to ${channelId}`, channelId, errMsg, "Check your server's internet connection.");
-      logger.error({ err, campaignId: id, channelId }, "Network send error");
+      await writeLog(id, "error", `Network error sending to channel ${channelId}`, channelId, errMsg, "Check your server's internet connection.");
+      logger.error({ campaignId: id, channelId, error: errMsg }, "Network send error");
     }
   }
 
@@ -225,7 +325,7 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
   if (campaign.rateLimitProtection) {
     if (rateLimited) {
       newRateLimitBonus = Math.min(campaign.rateLimitBonus + 10, 300);
-      await writeLog(id, "warning", `Rate limit protection: +${newRateLimitBonus - campaign.rateLimitBonus}s delay added`, undefined, `New effective interval: ${campaign.delay + newRateLimitBonus}s`);
+      await writeLog(id, "warning", `Rate limit protection: +${newRateLimitBonus - campaign.rateLimitBonus}s delay added`, undefined, `New effective interval: ${campaignDelay + newRateLimitBonus}s`);
     } else if (cycleCount % 5 === 0 && campaign.rateLimitBonus > 0) {
       newRateLimitBonus = Math.max(campaign.rateLimitBonus - 2, 0);
     }
@@ -286,9 +386,9 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
   if (!fresh?.running) return { nextMs: 0, remove: true };
 
   // Compute next delay — always measured from NOW (after cycle finishes)
-  let nextMs = (campaign.delay + newRateLimitBonus) * 1000;
+  let nextMs = (campaignDelay + newRateLimitBonus) * 1000;
   if (campaign.jitter > 0) {
-    nextMs += (campaign.delay * 1000 * Math.random() * campaign.jitter) / 100;
+    nextMs += (campaignDelay * 1000 * Math.random() * campaign.jitter) / 100;
   }
   if (rateLimited && retryAfterMs > 0) {
     nextMs = Math.max(nextMs, retryAfterMs + 2000);
