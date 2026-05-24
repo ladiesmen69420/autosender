@@ -740,7 +740,7 @@ export default function Home() {
   const [presenceToken, setPresenceToken] = useLocalState("bb_presence_token", "");
   const [presenceStatus, setPresenceStatus] = useLocalState<"online" | "idle" | "dnd">("bb_presence_status", "online");
   const [presenceActive, setPresenceActive] = useState(false);
-  const { data: presenceServerStatus, refetch: refetchPresenceStatus } = useQuery<{ connected: boolean; status: "online" | "idle" | "dnd" | null }>({
+  const { data: presenceServerStatus, refetch: refetchPresenceStatus } = useQuery<{ connected: boolean; status: "online" | "idle" | "dnd" | null; desiredOpen: boolean }>({
     queryKey: ["presence-status", presenceToken],
     queryFn: async () => {
       if (!presenceToken) return { connected: false, status: null };
@@ -844,11 +844,18 @@ export default function Home() {
   }, [campaignServerFingerprint]);
 
   useEffect(() => {
-    setPresenceActive(!!presenceServerStatus?.connected);
+    // Only flip to inactive when the server explicitly has desiredOpen=false.
+    // If desiredOpen is still true but connected=false, the gateway is just
+    // reconnecting — don't reset the UI back to "Go Online".
+    if (presenceServerStatus?.desiredOpen === false) {
+      setPresenceActive(false);
+    } else if (presenceServerStatus?.connected || presenceServerStatus?.desiredOpen) {
+      setPresenceActive(true);
+    }
     if (presenceServerStatus?.status && ["online", "idle", "dnd"].includes(presenceServerStatus.status)) {
       setPresenceStatus(presenceServerStatus.status);
     }
-  }, [presenceServerStatus?.connected, presenceServerStatus?.status]);
+  }, [presenceServerStatus?.connected, presenceServerStatus?.status, presenceServerStatus?.desiredOpen]);
 
   function getDraft(id: number) { return drafts[id] ?? null; }
   function setDraft(id: number, updates: Partial<(typeof drafts)[number]>) {
@@ -1910,9 +1917,14 @@ export default function Home() {
               <div className="rounded-xl border border-border bg-card/60 p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2"><Wifi className="w-3.5 h-3.5 text-primary" />Online Presence</h3>
-                  {presenceActive && (
+                  {presenceActive && presenceServerStatus?.connected && (
                     <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px] gap-1.5">
                       <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />{presenceStatus}
+                    </Badge>
+                  )}
+                  {presenceActive && !presenceServerStatus?.connected && (
+                    <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] gap-1.5">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />reconnecting
                     </Badge>
                   )}
                 </div>

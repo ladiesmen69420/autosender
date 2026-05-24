@@ -16,7 +16,10 @@ type Connection = {
   status: Status;
   desiredOpen: boolean;
   heartbeat: ReturnType<typeof setInterval> | null;
+  heartbeatWatchdog: ReturnType<typeof setTimeout> | null;
   lastSeq: number | null;
+  lastHeartbeatAcked: boolean;
+  heartbeatInterval: number;
   reconnectAttempts: number;
   identified: boolean;
   startedAt: number | null;
@@ -28,6 +31,16 @@ const CONNECTIONS = new Map<string, Connection>();
 
 const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
 const CLIENT_BUILD_NUMBER = 396421;
+
+// Close codes from which reconnecting is pointless (unrecoverable auth / config errors)
+const NON_RESUMABLE_CLOSE_CODES = new Set([
+  4004, // Authentication failed — bad token
+  4010, // Invalid shard
+  4011, // Sharding required
+  4012, // Invalid API version
+  4013, // Invalid intents
+  4014, // Disallowed intents
+]);
 
 function getProxyAgent(): ProxyAgent | null {
   const url = process.env.DISCORD_OUTBOUND_PROXY?.trim();
@@ -101,30 +114,62 @@ function identify(c: Connection, token: string) {
   c.identified = true;
 }
 
-function startHeartbeat(c: Connection, intervalMs: number) {
-  if (c.heartbeat) clearInterval(c.heartbeat);
+function clearHeartbeat(c: Connection) {
+  if (c.heartbeat) {
+    clearInterval(c.heartbeat);
+    c.heartbeat = null;
+  }
+  if (c.heartbeatWatchdog) {
+    clearTimeout(c.heartbeatWatchdog);
+    c.heartbeatWatchdog = null;
+  }
+}
+
+function startHeartbeat(token: string, c: Connection, intervalMs: number) {
+  clearHeartbeat(c);
+  c.heartbeatInterval = intervalMs;
+  c.lastHeartbeatAcked = true; // treat as acked at start
+
+  function sendHeartbeat() {
+    if (!c.ws || c.ws.readyState !== WebSocket.OPEN) return;
+
+    if (!c.lastHeartbeatAcked) {
+      // Previous heartbeat was never acked — connection is a zombie
+      logger.warn("Discord gateway: heartbeat not acked — forcing reconnect (zombie connection)");
+      try { c.ws.terminate(); } catch {}
+      return;
+    }
+
+    c.lastHeartbeatAcked = false;
+    send(c.ws, { op: 1, d: c.lastSeq });
+
+    // Watchdog: if no ack comes within 20s, force-close
+    if (c.heartbeatWatchdog) clearTimeout(c.heartbeatWatchdog);
+    c.heartbeatWatchdog = setTimeout(() => {
+      if (!c.lastHeartbeatAcked && c.ws && c.ws.readyState === WebSocket.OPEN) {
+        logger.warn("Discord gateway: heartbeat ack watchdog fired — terminating zombie connection");
+        try { c.ws.terminate(); } catch {}
+      }
+    }, Math.min(20000, intervalMs - 1000));
+  }
+
   // Discord recommends jittering the first heartbeat
+  const jitterDelay = Math.random() * intervalMs;
   setTimeout(() => {
-    if (c.ws && c.ws.readyState === WebSocket.OPEN) {
-      send(c.ws, { op: 1, d: c.lastSeq });
-    }
-  }, Math.random() * intervalMs);
-  c.heartbeat = setInterval(() => {
-    if (c.ws && c.ws.readyState === WebSocket.OPEN) {
-      send(c.ws, { op: 1, d: c.lastSeq });
-    }
-  }, intervalMs);
+    sendHeartbeat();
+    c.heartbeat = setInterval(sendHeartbeat, intervalMs);
+  }, jitterDelay);
 }
 
 function teardown(c: Connection) {
-  if (c.heartbeat) clearInterval(c.heartbeat);
-  c.heartbeat = null;
+  clearHeartbeat(c);
   if (c.ws) {
     try { c.ws.removeAllListeners(); } catch {}
-    try { c.ws.close(); } catch {}
+    try { c.ws.terminate(); } catch {}
   }
   c.ws = null;
   c.identified = false;
+  c.lastHeartbeatAcked = true;
 }
 
 function open(token: string, c: Connection) {
@@ -140,7 +185,7 @@ function open(token: string, c: Connection) {
 
   ws.on("open", () => {
     c.reconnectAttempts = 0;
-    c.startedAt = Date.now();
+    c.startedAt = c.startedAt ?? Date.now();
     logger.info("Discord gateway: socket opened");
   });
 
@@ -151,23 +196,38 @@ function open(token: string, c: Connection) {
     switch (payload.op) {
       case 10: {
         // HELLO — start heartbeat then identify
-        startHeartbeat(c, payload.d.heartbeat_interval);
+        startHeartbeat(token, c, payload.d.heartbeat_interval);
         identify(c, token);
         break;
       }
       case 11: {
-        // HEARTBEAT ACK
+        // HEARTBEAT ACK — connection is alive
+        c.lastHeartbeatAcked = true;
+        if (c.heartbeatWatchdog) {
+          clearTimeout(c.heartbeatWatchdog);
+          c.heartbeatWatchdog = null;
+        }
+        break;
+      }
+      case 1: {
+        // HEARTBEAT request from Discord — send one immediately
+        if (c.ws && c.ws.readyState === WebSocket.OPEN) {
+          send(c.ws, { op: 1, d: c.lastSeq });
+        }
         break;
       }
       case 7: {
-        // RECONNECT
+        // RECONNECT requested by Discord
+        logger.info("Discord gateway: server requested reconnect");
         teardown(c);
         scheduleReconnect(token, c);
         break;
       }
       case 9: {
         // INVALID SESSION
-        c.sessionId = null;
+        const resumable = payload.d === true;
+        logger.warn({ resumable }, "Discord gateway: invalid session");
+        c.sessionId = resumable ? c.sessionId : null;
         teardown(c);
         scheduleReconnect(token, c);
         break;
@@ -176,28 +236,45 @@ function open(token: string, c: Connection) {
         if (payload.t === "READY") {
           c.sessionId = payload.d?.session_id ?? null;
           c.resumeUrl = payload.d?.resume_gateway_url ?? null;
-          logger.info("Discord gateway: READY (account is now online)");
+          c.startedAt = Date.now();
+          logger.info("Discord gateway: READY — account is now online");
         }
         break;
       }
     }
   });
 
-  ws.on("close", (code) => {
-    logger.warn({ code }, "Discord gateway: socket closed");
+  ws.on("close", (code, reason) => {
+    const reasonStr = reason?.toString() ?? "";
+    logger.warn({ code, reason: reasonStr }, "Discord gateway: socket closed");
     teardown(c);
-    if (c.desiredOpen) scheduleReconnect(token, c);
+
+    if (!c.desiredOpen) return;
+
+    if (NON_RESUMABLE_CLOSE_CODES.has(code)) {
+      logger.error(
+        { code },
+        "Discord gateway: received non-resumable close code — stopping presence (check token validity)",
+      );
+      c.desiredOpen = false;
+      CONNECTIONS.delete(token);
+      return;
+    }
+
+    scheduleReconnect(token, c);
   });
 
   ws.on("error", (err) => {
-    logger.warn({ err: err?.message }, "Discord gateway: socket error");
+    logger.warn({ error: err?.message }, "Discord gateway: socket error");
   });
 }
 
 function scheduleReconnect(token: string, c: Connection) {
+  if (!c.desiredOpen) return;
   c.reconnectAttempts += 1;
   const base = Math.min(60000, 1500 * 2 ** Math.min(c.reconnectAttempts, 5));
   const delay = base + Math.random() * 1000;
+  logger.info({ attempt: c.reconnectAttempts, delayMs: Math.round(delay) }, "Discord gateway: scheduling reconnect");
   setTimeout(() => {
     if (c.desiredOpen) open(token, c);
   }, delay);
@@ -212,7 +289,10 @@ export function startPresence(token: string, status: Status = "online"): { ok: b
       status,
       desiredOpen: true,
       heartbeat: null,
+      heartbeatWatchdog: null,
       lastSeq: null,
+      lastHeartbeatAcked: true,
+      heartbeatInterval: 41250,
       reconnectAttempts: 0,
       identified: false,
       startedAt: null,
@@ -223,7 +303,7 @@ export function startPresence(token: string, status: Status = "online"): { ok: b
   } else {
     c.status = status;
     c.desiredOpen = true;
-    if (c.ws && c.identified) {
+    if (c.ws && c.ws.readyState === WebSocket.OPEN && c.identified) {
       // Update presence status on existing connection
       send(c.ws, {
         op: 3,
@@ -231,6 +311,11 @@ export function startPresence(token: string, status: Status = "online"): { ok: b
       });
       return { ok: true };
     }
+    // Connection exists but is not open/identified — let it reconnect naturally or open now
+    if (!c.ws || c.ws.readyState === WebSocket.CLOSED || c.ws.readyState === WebSocket.CLOSING) {
+      open(token, c);
+    }
+    return { ok: true };
   }
   open(token, c);
   return { ok: true };
@@ -250,14 +335,16 @@ export function presenceStatus(token: string): {
   status: Status | null;
   uptimeMs: number;
   sessionId: string | null;
+  desiredOpen: boolean;
 } {
   const c = CONNECTIONS.get(token);
-  if (!c) return { connected: false, status: null, uptimeMs: 0, sessionId: null };
+  if (!c) return { connected: false, status: null, uptimeMs: 0, sessionId: null, desiredOpen: false };
   const connected = !!(c.ws && c.ws.readyState === WebSocket.OPEN && c.identified);
   return {
     connected,
     status: c.status,
     uptimeMs: c.startedAt ? Date.now() - c.startedAt : 0,
     sessionId: c.sessionId,
+    desiredOpen: c.desiredOpen,
   };
 }
