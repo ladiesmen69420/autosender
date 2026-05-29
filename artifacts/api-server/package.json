@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@clerk/express": "^2.0.8",
+    "@clerk/express": "latest",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-openai-ai-server": "workspace:*",
@@ -22,7 +22,7 @@
     "pino": "^9",
     "pino-http": "^10",
     "undici": "^8.1.0",
-    "ws": "^8.20.0"
+    "ws": "latest"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
