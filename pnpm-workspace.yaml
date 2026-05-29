@@ -74,7 +74,18 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
-  "@clerk/shared": "4.8.1"
+  # Security overrides: keep vulnerable transitive packages off known-bad versions.
+  # Regenerate pnpm-lock.yaml with `pnpm install` after changing this file.
+  '@clerk/backend': latest
+  '@clerk/shared': latest
+  fast-uri: latest
+  js-cookie: latest
+  brace-expansion: latest
+  follow-redirects: latest
+  postcss: latest
+  qs: latest
+  ws: latest
+  yaml: latest
   drizzle-orm: "0.45.2"
   lodash: "4.18.0"
   path-to-regexp: "8.4.0"
