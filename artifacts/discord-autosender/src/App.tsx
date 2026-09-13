@@ -14,7 +14,7 @@ import DiscordSignIn from "@/pages/discord-signin";
 function useHideClerkDevBanner() {
   useLayoutEffect(() => {
     function hideDevBanner() {
-      document.querySelectorAll<HTMLElement>("a").forEach((el) => {
+    document.querySelectorAll<HTMLAnchorElement>("a").forEach((el) => {
         if (el.href?.includes("clerk.com") && el.textContent?.includes("Development")) {
           const parent = el.closest<HTMLElement>('[class*="cl-"]') ?? el;
           parent.style.setProperty("display", "none", "important");

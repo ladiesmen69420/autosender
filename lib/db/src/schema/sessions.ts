@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const sessionsTable = pgTable("sessions", {
   id: serial("id").primaryKey(),
+  userId: text("user_id"),
   name: text("name").notNull(),
   token: text("token").notNull(),
   channels: text("channels").array().notNull(),

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { useSignIn, useAuth } from "@clerk/react";
+import { useAuth, useClerk } from "@clerk/react";
+import { useSignIn } from "@clerk/react/legacy";
 import { useLocation } from "wouter";
 
 const TIMEOUT_MS = 20_000;
 
 export default function DiscordSignIn() {
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn, isLoaded } = useSignIn();
+  const { setActive } = useClerk();
   const { isSignedIn } = useAuth();
   const [, setLocation] = useLocation();
   const [error, setError] = useState<string | null>(null);
@@ -37,12 +39,16 @@ export default function DiscordSignIn() {
       setLocation("/");
       return;
     }
+    window.history.replaceState({}, document.title, window.location.pathname);
 
     attempted.current = true;
 
     (async () => {
       try {
-        const result = await signIn.create({ strategy: "ticket", ticket: token });
+        const signInApi = signIn as unknown as {
+          create(args: { strategy: "ticket"; ticket: string }): Promise<{ status?: string; createdSessionId?: string }>;
+        };
+        const result = await signInApi.create({ strategy: "ticket", ticket: token });
         if (result.status === "complete" && setActive) {
           await setActive({ session: result.createdSessionId });
           setLocation("/app");

@@ -1,7 +1,7 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { sessionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   ValidateTokenBody,
   SendMessagesBody,
@@ -16,6 +16,7 @@ import { discordHeaders } from "../lib/discord-headers";
 import { discordFetch } from "../lib/discord-fetch";
 import { startPresence, stopPresence, presenceStatus } from "../lib/discord-gateway";
 import { startWarmup, stopWarmup, getWarmupState, isWarmupActive } from "../lib/discord-warmup";
+import { getUserId, requireUser } from "../lib/auth";
 
 function jitter(min: number, max: number): Promise<void> {
   return new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
@@ -186,6 +187,16 @@ async function fetchMessageRequests(token: string): Promise<DiscordChannel[]> {
 }
 
 const router = Router();
+router.use(requireUser);
+
+function rejectWarmupSend(token: string, res: Response): boolean {
+  if (!isWarmupActive(token)) return false;
+  res.status(409).json({
+    error: "Warm-up is active",
+    details: "Sending is disabled until the passive warm-up completes or is stopped.",
+  });
+  return true;
+}
 
 function makeHumanizedPrompt(persona?: string): string {
   const variants = [
@@ -245,6 +256,7 @@ router.post("/send-messages", async (req, res) => {
   }
 
   const { token, channels, message, mentions } = parsed.data;
+  if (rejectWarmupSend(token, res)) return;
   const results: Array<{ channelId: string; success: boolean; error?: string; retryAfterMs?: number }> = [];
   let sent = 0;
   let failed = 0;
@@ -400,6 +412,7 @@ router.post("/ai-reply", async (req, res) => {
   }
 
   const { context, persona, token, channelId } = parsed.data;
+  if (token && channelId && rejectWarmupSend(token, res)) return;
 
   let reply = "";
   try {
@@ -474,6 +487,7 @@ router.post("/auto-reply", async (req, res) => {
   }
 
   const { token, persona, fixedMessage, fixedMessageVariants, triggerKeywords, maxRepliesPerUser, sentCountsByChannel, maxRepliesPerCycle } = parsed.data;
+  if (rejectWarmupSend(token, res)) return;
   const triggers = (triggerKeywords ?? [])
     .map((k: string) => k.trim().toLowerCase())
     .filter((k: string) => k.length > 0);
@@ -571,7 +585,7 @@ router.post("/auto-reply", async (req, res) => {
         let reply = fixed ? obfuscateFixed(fixed) : "";
         if (!reply) {
           const completion = await openai.chat.completions.create({
-            model: "gpt-5.2",
+            model: process.env.OPENAI_MODEL || "gpt-4o-mini",
             max_completion_tokens: 200,
             messages: [
               { role: "system", content: systemPrompt },
@@ -670,7 +684,7 @@ router.post("/presence/status", async (req, res) => {
 
 router.post("/warmup/start", async (req, res) => {
   const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
-  const days = typeof req.body?.days === "number" ? req.body.days : 0;
+  const days = typeof req.body?.days === "number" ? Math.min(30, req.body.days) : 0;
   if (!token || days <= 0) { res.status(400).json({ active: false, startedAt: 0, endsAt: 0, remainingMs: 0, ticksDone: 0, channelsBrowsed: 0, guildsOpened: 0, messagesRead: 0, lastTickAt: 0 }); return; }
   startWarmup(token, days);
   res.json(getWarmupState(token));
@@ -690,16 +704,26 @@ router.post("/warmup/status", async (req, res) => {
 });
 
 router.get("/sessions", async (req, res) => {
-  const rows = await db.select().from(sessionsTable).orderBy(sessionsTable.createdAt);
+  const userId = getUserId(req)!;
+  const rows = await db.select().from(sessionsTable)
+    .where(eq(sessionsTable.userId, userId)).orderBy(sessionsTable.createdAt);
   res.json(
     rows.map((r: { createdAt: Date; [k: string]: unknown }) => ({
-      ...r,
+      id: r.id,
+      name: r.name,
+      tokenConfigured: Boolean(r.token),
+      channels: r.channels,
+      message: r.message,
+      delay: r.delay,
+      repeatBypass: r.repeatBypass,
+      jitter: r.jitter,
       createdAt: r.createdAt.toISOString(),
     })),
   );
 });
 
 router.post("/sessions", async (req, res) => {
+  const userId = getUserId(req)!;
   const parsed = CreateSessionBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body" });
@@ -709,6 +733,7 @@ router.post("/sessions", async (req, res) => {
   const [row] = await db
     .insert(sessionsTable)
     .values({
+      userId,
       name: parsed.data.name,
       token: parsed.data.token,
       channels: parsed.data.channels,
@@ -718,17 +743,23 @@ router.post("/sessions", async (req, res) => {
     })
     .returning();
 
-  res.status(201).json({ ...row, createdAt: row.createdAt.toISOString() });
+  res.status(201).json({
+    id: row.id, name: row.name, tokenConfigured: true,
+    channels: row.channels, message: row.message, delay: row.delay,
+    repeatBypass: row.repeatBypass, jitter: row.jitter,
+    createdAt: row.createdAt.toISOString(),
+  });
 });
 
 router.delete("/sessions/:id", async (req, res) => {
+  const userId = getUserId(req)!;
   const parsed = DeleteSessionParams.safeParse({ id: Number(req.params.id) });
   if (!parsed.success) {
     res.status(400).json({ success: false });
     return;
   }
 
-  await db.delete(sessionsTable).where(eq(sessionsTable.id, parsed.data.id));
+  await db.delete(sessionsTable).where(and(eq(sessionsTable.id, parsed.data.id), eq(sessionsTable.userId, userId)));
   res.json({ success: true });
 });
 

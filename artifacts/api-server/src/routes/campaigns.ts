@@ -1,25 +1,12 @@
 import { Router } from "express";
 import { db, campaignsTable, campaignLogsTable } from "@workspace/db";
-import { eq, and, gte, desc, or, isNull } from "drizzle-orm";
-import { getAuth } from "@clerk/express";
+import { eq, and, gte, desc } from "drizzle-orm";
 import { startCampaignSchedule, startIndependentSchedule, stopCampaignSchedule, getNextSendAt, doSend } from "../scheduler";
 import { pickStableUA } from "../lib/discord-headers";
+import { getUserId, requireUser } from "../lib/auth";
 
 const router = Router();
-
-function getUserId(req: any): string | null {
-  try {
-    const auth = getAuth(req);
-    return auth?.userId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function userFilter(userId: string | null) {
-  if (!userId) return isNull(campaignsTable.userId);
-  return or(eq(campaignsTable.userId, userId), isNull(campaignsTable.userId));
-}
+router.use(requireUser);
 
 /* ─── Validation helpers ─────────────────────────────────────────────────── */
 
@@ -75,8 +62,7 @@ function validateJitter(jitter: unknown): string | null {
 }
 
 async function getSentToday(campaignId: number): Promise<number> {
-  const todayMidnight = new Date();
-  todayMidnight.setHours(0, 0, 0, 0);
+  const todayMidnight = getSgtMidnight();
   const rows = await db
     .select({ id: campaignLogsTable.id })
     .from(campaignLogsTable)
@@ -90,11 +76,33 @@ async function getSentToday(campaignId: number): Promise<number> {
   return rows.length;
 }
 
+function getSgtMidnight(now = new Date()): Date {
+  const sgtNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  sgtNow.setUTCHours(0, 0, 0, 0);
+  return new Date(sgtNow.getTime() - 8 * 60 * 60 * 1000);
+}
+
 function serializeCampaign(row: typeof campaignsTable.$inferSelect, sentToday = 0) {
   const nextSendAt = getNextSendAt(row.id);
   return {
-    ...row,
+    id: row.id,
+    name: row.name,
+    token: "",
+    tokenConfigured: Boolean(row.token),
+    channels: row.channels,
+    message: row.message,
+    messageVariants: row.messageVariants,
+    delay: row.delay,
+    jitter: row.jitter,
+    sendWindowStart: row.sendWindowStart,
+    sendWindowEnd: row.sendWindowEnd,
+    rotateEnabled: row.rotateEnabled,
     running: row.running,
+    sentCount: row.sentCount,
+    failedCount: row.failedCount,
+    rateLimitBonus: row.rateLimitBonus,
+    rateLimitProtection: row.rateLimitProtection,
+    consecutiveFailures: row.consecutiveFailures,
     sentToday,
     nextSendAt: nextSendAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -104,11 +112,9 @@ function serializeCampaign(row: typeof campaignsTable.$inferSelect, sentToday = 
 
 /* ─── GET / ──────────────────────────────────────────────────────────────── */
 router.get("/", async (req, res) => {
-  const userId = getUserId(req);
-  const filter = userFilter(userId);
-  const rows = await db.select().from(campaignsTable).where(filter).orderBy(campaignsTable.createdAt);
-  const todayMidnight = new Date();
-  todayMidnight.setHours(0, 0, 0, 0);
+  const userId = getUserId(req)!;
+  const rows = await db.select().from(campaignsTable).where(eq(campaignsTable.userId, userId)).orderBy(campaignsTable.createdAt);
+  const todayMidnight = getSgtMidnight();
 
   const todayCounts = await db
     .select({ campaignId: campaignLogsTable.campaignId, id: campaignLogsTable.id })
@@ -125,7 +131,7 @@ router.get("/", async (req, res) => {
 
 /* ─── POST / (create) ────────────────────────────────────────────────────── */
 router.post("/", async (req, res) => {
-  const userId = getUserId(req);
+  const userId = getUserId(req)!;
   const body = req.body as Record<string, unknown>;
 
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -190,6 +196,10 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
+  const [existing] = await db.select().from(campaignsTable)
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId))).limit(1);
+  if (!existing) { res.status(404).json({ error: "Campaign not found" }); return; }
 
   const body = req.body as Record<string, unknown>;
   const update: Record<string, unknown> = { consecutiveFailures: 0 };
@@ -201,8 +211,7 @@ router.put("/:id", async (req, res) => {
   }
   if ("token" in body) {
     const token = typeof body.token === "string" ? body.token.trim() : "";
-    if (!token) { res.status(400).json({ error: "Validation failed", details: "Discord token cannot be empty." }); return; }
-    update.token = token;
+    if (token) update.token = token;
   }
   if ("channels" in body) {
     const channels = Array.isArray(body.channels) ? (body.channels as string[]).map((c) => String(c).trim()).filter(Boolean) : [];
@@ -237,14 +246,14 @@ router.put("/:id", async (req, res) => {
   if ("sendWindowStart" in body || "sendWindowEnd" in body) {
     const start = "sendWindowStart" in body
       ? (typeof body.sendWindowStart === "string" && body.sendWindowStart.trim() ? body.sendWindowStart.trim() : null)
-      : undefined;
+      : existing.sendWindowStart;
     const end = "sendWindowEnd" in body
       ? (typeof body.sendWindowEnd === "string" && body.sendWindowEnd.trim() ? body.sendWindowEnd.trim() : null)
-      : undefined;
-    const winErr = validateSendWindow(start ?? null, end ?? null);
+      : existing.sendWindowEnd;
+    const winErr = validateSendWindow(start, end);
     if (winErr) { res.status(400).json({ error: "Validation failed", details: winErr }); return; }
-    if (start !== undefined) update.sendWindowStart = start;
-    if (end !== undefined) update.sendWindowEnd = end;
+    if ("sendWindowStart" in body) update.sendWindowStart = start;
+    if ("sendWindowEnd" in body) update.sendWindowEnd = end;
   }
   if ("rotateEnabled" in body) {
     update.rotateEnabled = typeof body.rotateEnabled === "boolean" ? body.rotateEnabled : true;
@@ -254,7 +263,7 @@ router.put("/:id", async (req, res) => {
     const [row] = await db
       .update(campaignsTable)
       .set(update)
-      .where(eq(campaignsTable.id, id))
+      .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId)))
       .returning();
 
     if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
@@ -270,11 +279,15 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
+  const [owned] = await db.select({ id: campaignsTable.id }).from(campaignsTable)
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId))).limit(1);
+  if (!owned) { res.status(404).json({ error: "Campaign not found" }); return; }
 
   stopCampaignSchedule(id);
-  await db.update(campaignsTable).set({ running: false }).where(eq(campaignsTable.id, id));
+  await db.update(campaignsTable).set({ running: false }).where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId)));
   await db.delete(campaignLogsTable).where(eq(campaignLogsTable.campaignId, id));
-  await db.delete(campaignsTable).where(eq(campaignsTable.id, id));
+  await db.delete(campaignsTable).where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId)));
   res.json({ success: true });
 });
 
@@ -283,8 +296,9 @@ router.post("/:id/duplicate", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const userId = getUserId(req);
-  const [original] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id)).limit(1);
+  const userId = getUserId(req)!;
+  const [original] = await db.select().from(campaignsTable)
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId))).limit(1);
   if (!original) { res.status(404).json({ error: "Campaign not found" }); return; }
 
   try {
@@ -318,8 +332,10 @@ router.post("/:id/duplicate", async (req, res) => {
 router.post("/:id/start", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
 
-  const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id)).limit(1);
+  const [campaign] = await db.select().from(campaignsTable)
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId))).limit(1);
   if (!campaign) { res.status(404).json({ error: "Campaign not found" }); return; }
 
   // Validate all required fields before starting
@@ -346,7 +362,7 @@ router.post("/:id/start", async (req, res) => {
     const [row] = await db
       .update(campaignsTable)
       .set({ running: true, consecutiveFailures: 0 })
-      .where(eq(campaignsTable.id, id))
+      .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId)))
       .returning();
 
     if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
@@ -368,6 +384,7 @@ router.post("/:id/start", async (req, res) => {
 router.post("/:id/stop", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
 
   stopCampaignSchedule(id);
 
@@ -375,7 +392,7 @@ router.post("/:id/stop", async (req, res) => {
     const [row] = await db
       .update(campaignsTable)
       .set({ running: false })
-      .where(eq(campaignsTable.id, id))
+      .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId)))
       .returning();
 
     if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
@@ -391,11 +408,12 @@ router.post("/:id/stop", async (req, res) => {
 router.post("/:id/reset-stats", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
 
   const [row] = await db
     .update(campaignsTable)
     .set({ sentCount: 0, failedCount: 0, rateLimitBonus: 0, consecutiveFailures: 0 })
-    .where(eq(campaignsTable.id, id))
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId)))
     .returning();
 
   if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }
@@ -406,8 +424,10 @@ router.post("/:id/reset-stats", async (req, res) => {
 router.post("/:id/test-send", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
 
-  const [campaign] = await db.select().from(campaignsTable).where(eq(campaignsTable.id, id)).limit(1);
+  const [campaign] = await db.select().from(campaignsTable)
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId))).limit(1);
   if (!campaign) { res.status(404).json({ error: "Campaign not found" }); return; }
 
   if (!campaign.token) { res.status(400).json({ error: "Cannot test", details: "Campaign has no token." }); return; }
@@ -456,9 +476,13 @@ router.post("/:id/test-send", async (req, res) => {
 router.get("/:id/logs", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
+  const [owned] = await db.select({ id: campaignsTable.id }).from(campaignsTable)
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId))).limit(1);
+  if (!owned) { res.status(404).json({ error: "Campaign not found" }); return; }
 
   const type = typeof req.query.type === "string" ? req.query.type : undefined;
-  const since = req.query.since === "today" ? (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })() : undefined;
+  const since = req.query.since === "today" ? getSgtMidnight() : undefined;
 
   const conditions = [eq(campaignLogsTable.campaignId, id)];
   if (type && ["success", "warning", "error"].includes(type)) {
@@ -482,6 +506,10 @@ router.get("/:id/logs", async (req, res) => {
 router.delete("/:id/logs", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
+  const [owned] = await db.select({ id: campaignsTable.id }).from(campaignsTable)
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId))).limit(1);
+  if (!owned) { res.status(404).json({ error: "Campaign not found" }); return; }
 
   await db.delete(campaignLogsTable).where(eq(campaignLogsTable.campaignId, id));
   res.json({ success: true });
@@ -491,6 +519,7 @@ router.delete("/:id/logs", async (req, res) => {
 router.patch("/:id/rate-limit-protection", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userId = getUserId(req)!;
 
   const body = req.body as Record<string, unknown>;
   const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
@@ -498,7 +527,7 @@ router.patch("/:id/rate-limit-protection", async (req, res) => {
   const [row] = await db
     .update(campaignsTable)
     .set({ rateLimitProtection: enabled, ...(enabled ? {} : { rateLimitBonus: 0 }) })
-    .where(eq(campaignsTable.id, id))
+    .where(and(eq(campaignsTable.id, id), eq(campaignsTable.userId, userId)))
     .returning();
 
   if (!row) { res.status(404).json({ error: "Campaign not found" }); return; }

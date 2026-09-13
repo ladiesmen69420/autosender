@@ -16,6 +16,7 @@ type Connection = {
   status: Status;
   desiredOpen: boolean;
   heartbeat: ReturnType<typeof setInterval> | null;
+  heartbeatInitialTimeout: ReturnType<typeof setTimeout> | null;
   heartbeatWatchdog: ReturnType<typeof setTimeout> | null;
   lastSeq: number | null;
   lastHeartbeatAcked: boolean;
@@ -123,6 +124,10 @@ function clearHeartbeat(c: Connection) {
     clearTimeout(c.heartbeatWatchdog);
     c.heartbeatWatchdog = null;
   }
+  if (c.heartbeatInitialTimeout) {
+    clearTimeout(c.heartbeatInitialTimeout);
+    c.heartbeatInitialTimeout = null;
+  }
 }
 
 function startHeartbeat(token: string, c: Connection, intervalMs: number) {
@@ -155,7 +160,8 @@ function startHeartbeat(token: string, c: Connection, intervalMs: number) {
 
   // Discord recommends jittering the first heartbeat
   const jitterDelay = Math.random() * intervalMs;
-  setTimeout(() => {
+  c.heartbeatInitialTimeout = setTimeout(() => {
+    c.heartbeatInitialTimeout = null;
     sendHeartbeat();
     c.heartbeat = setInterval(sendHeartbeat, intervalMs);
   }, jitterDelay);
@@ -289,6 +295,7 @@ export function startPresence(token: string, status: Status = "online"): { ok: b
       status,
       desiredOpen: true,
       heartbeat: null,
+      heartbeatInitialTimeout: null,
       heartbeatWatchdog: null,
       lastSeq: null,
       lastHeartbeatAcked: true,

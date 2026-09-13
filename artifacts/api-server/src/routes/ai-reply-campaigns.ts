@@ -1,23 +1,10 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { aiReplyCampaignsTable, db } from "@workspace/db";
+import { getUserId, requireUser } from "../lib/auth";
 
 const router = Router();
-
-function getUserId(req: any): string | null {
-  try {
-    const auth = getAuth(req);
-    return auth?.userId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function userFilter(userId: string | null) {
-  if (!userId) return isNull(aiReplyCampaignsTable.userId);
-  return or(eq(aiReplyCampaignsTable.userId, userId), isNull(aiReplyCampaignsTable.userId));
-}
+router.use(requireUser);
 
 function parseBody(body: Record<string, unknown>) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -30,24 +17,31 @@ function parseBody(body: Record<string, unknown>) {
 
 function serialize(row: typeof aiReplyCampaignsTable.$inferSelect) {
   return {
-    ...row,
+    id: row.id,
+    userId: row.userId,
+    name: row.name,
+    token: "",
+    tokenConfigured: Boolean(row.token),
+    persona: row.persona,
+    mode: row.mode,
+    fixedMessage: row.fixedMessage,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
 router.get("/", async (req, res) => {
-  const userId = getUserId(req);
+  const userId = getUserId(req)!;
   const rows = await db
     .select()
     .from(aiReplyCampaignsTable)
-    .where(userFilter(userId))
+    .where(eq(aiReplyCampaignsTable.userId, userId))
     .orderBy(aiReplyCampaignsTable.createdAt);
   res.json(rows.map(serialize));
 });
 
 router.post("/", async (req, res) => {
-  const userId = getUserId(req);
+  const userId = getUserId(req)!;
   const data = parseBody(req.body as Record<string, unknown>);
   if (!data.name) {
     res.status(400).json({ error: "name is required" });
@@ -72,7 +66,7 @@ router.put("/:id", async (req, res) => {
     return;
   }
 
-  const userId = getUserId(req);
+  const userId = getUserId(req)!;
   const data = parseBody(req.body as Record<string, unknown>);
   if (!data.name) {
     res.status(400).json({ error: "name is required" });
@@ -86,7 +80,7 @@ router.put("/:id", async (req, res) => {
   const [row] = await db
     .update(aiReplyCampaignsTable)
     .set({ ...data, updatedAt: new Date() })
-    .where(and(eq(aiReplyCampaignsTable.id, id), userFilter(userId)))
+    .where(and(eq(aiReplyCampaignsTable.id, id), eq(aiReplyCampaignsTable.userId, userId)))
     .returning();
 
   if (!row) {
@@ -104,10 +98,10 @@ router.delete("/:id", async (req, res) => {
     return;
   }
 
-  const userId = getUserId(req);
+  const userId = getUserId(req)!;
   await db
     .delete(aiReplyCampaignsTable)
-    .where(and(eq(aiReplyCampaignsTable.id, id), userFilter(userId)));
+    .where(and(eq(aiReplyCampaignsTable.id, id), eq(aiReplyCampaignsTable.userId, userId)));
   res.json({ success: true });
 });
 

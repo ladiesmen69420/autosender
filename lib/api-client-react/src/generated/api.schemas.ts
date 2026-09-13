@@ -154,7 +154,8 @@ export interface CreateSessionBody {
 export interface Session {
   id: number;
   name: string;
-  token: string;
+  /** Whether a Discord token is stored; the token itself is never returned. */
+  tokenConfigured: boolean;
   channels: string[];
   message: string;
   delay: number;

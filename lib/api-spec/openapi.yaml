@@ -610,8 +610,9 @@ components:
           type: integer
         name:
           type: string
-        token:
-          type: string
+        tokenConfigured:
+          type: boolean
+          description: Whether a Discord token is stored; the token itself is never returned.
         channels:
           type: array
           items:
@@ -628,7 +629,7 @@ components:
       required:
         - id
         - name
-        - token
+        - tokenConfigured
         - channels
         - message
         - delay

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { logger } from "./lib/logger";
 import { discordHeaders, pickStableUA } from "./lib/discord-headers";
 import { discordFetch } from "./lib/discord-fetch";
+import { isWarmupActive, getWarmupState } from "./lib/discord-warmup";
 
 const CHANNEL_ID_RE = /^\d{15,20}$/;
 const TRANSIENT_NETWORK_ERRORS = ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"];
@@ -120,6 +121,7 @@ function isWithinSendWindow(start: string | null | undefined, end: string | null
   const startMin = parseHHMM(start);
   const endMin   = parseHHMM(end);
   if (startMin === null || endMin === null) return true;
+  if (startMin === endMin) return true;
   const currentMin = getSgtMinutesNow();
   if (startMin <= endMin) return currentMin >= startMin && currentMin < endMin;
   return currentMin >= startMin || currentMin < endMin;
@@ -258,14 +260,26 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
   // Send window enforcement
   if (!isWithinSendWindow(campaign.sendWindowStart, campaign.sendWindowEnd)) {
     const waitMins = minutesUntilWindowOpen(campaign.sendWindowStart);
-    await writeLog(
-      id,
-      "warning",
-      `Outside send window (${campaign.sendWindowStart}–${campaign.sendWindowEnd} SGT) — skipping this rotation`,
-      undefined,
-      `${waitMins} min until window opens`,
-    );
-    return { nextMs: 2000, remove: false };
+    const lastWindowLog = nextSendTimes.get(id)?.getTime() ?? 0;
+    if (Date.now() - lastWindowLog > 5 * 60 * 1000) {
+      await writeLog(
+        id,
+        "warning",
+        `Outside send window (${campaign.sendWindowStart}–${campaign.sendWindowEnd} SGT) — waiting`,
+        undefined,
+        `${waitMins} min until window opens`,
+      );
+    }
+    const nextAt = Date.now() + Math.max(60_000, waitMins * 60_000);
+    nextSendTimes.set(id, new Date(nextAt));
+    return { nextMs: Math.max(60_000, waitMins * 60_000), remove: false };
+  }
+
+  if (isWarmupActive(campaign.token)) {
+    const warmup = getWarmupState(campaign.token);
+    const waitMs = Math.max(60_000, warmup.remainingMs);
+    await writeLog(id, "warning", "Warm-up is active — sending paused", undefined, "Sending resumes when warm-up ends or is stopped.");
+    return { nextMs: waitMs, remove: false };
   }
 
   const cycleCount = (sendCounts.get(id) ?? 0) + 1;
@@ -276,6 +290,9 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
   let rateLimited = false;
   let retryAfterMs = 0;
   const ua = pickStableUA(campaign.token);
+  const message = campaign.messageVariants?.filter(Boolean).length
+    ? campaign.messageVariants.filter(Boolean)[Math.floor(Math.random() * campaign.messageVariants.filter(Boolean).length)]
+    : campaign.message;
 
   for (let i = 0; i < campaign.channels.length; i++) {
     // Check cancellation before every channel send
@@ -297,7 +314,7 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
     if (i > 0) await humanDelay(600, 2500);
 
     try {
-      const result = await doSend(campaign.token, channelId, campaign.message, ua, (campaign as { mentions?: string[] }).mentions);
+      const result = await doSend(campaign.token, channelId, message, ua, (campaign as { mentions?: string[] }).mentions);
 
       if (result.status === 429) {
         rateLimited = true;
@@ -352,7 +369,7 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
         failedCount: campaign.failedCount + failed,
         rateLimitBonus: newRateLimitBonus,
         consecutiveFailures: newConsecutiveFailures,
-        lastSentAt: new Date(),
+        ...(sent > 0 ? { lastSentAt: new Date() } : {}),
       })
       .where(eq(campaignsTable.id, id));
     logger.warn({ campaignId: id }, "Campaign auto-stopped due to consecutive failures");
@@ -366,7 +383,7 @@ async function executeCampaignCycle(id: number): Promise<{ nextMs: number; remov
       failedCount: campaign.failedCount + failed,
       rateLimitBonus: newRateLimitBonus,
       consecutiveFailures: newConsecutiveFailures,
-      lastSentAt: new Date(),
+      ...(sent > 0 ? { lastSentAt: new Date() } : {}),
     })
     .where(eq(campaignsTable.id, id));
 

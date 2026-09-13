@@ -38,7 +38,6 @@ export const SendMessagesBody = zod.object({
   token: zod.string(),
   channels: zod.array(zod.string()),
   message: zod.string(),
-  mentions: zod.array(zod.string()).optional(),
 });
 
 export const SendMessagesResponse = zod.object({
@@ -264,7 +263,11 @@ export const GetWarmupStatusResponse = zod.object({
 export const ListSessionsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
-  token: zod.string(),
+  tokenConfigured: zod
+    .boolean()
+    .describe(
+      "Whether a Discord token is stored; the token itself is never returned.",
+    ),
   channels: zod.array(zod.string()),
   message: zod.string(),
   delay: zod.number(),

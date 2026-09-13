@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   useValidateToken, useGenerateAIReply, useRunAutoReply, useFetchDMs, useSendMessages,
 } from "@workspace/api-client-react";
-import type { TokenValidationResult, DMConversation } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { TokenValidationResult, DMConversation } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +34,7 @@ type View = "dashboard" | "autosender" | "ai-reply" | "tokens" | "logs";
 
 type ServerCampaign = {
   id: number; name: string; token: string; channels: string[];
+  tokenConfigured?: boolean;
   message: string; delay: number; jitter: number; running: boolean;
   sentCount: number; failedCount: number; rateLimitBonus: number;
   rateLimitProtection: boolean; sentToday: number; nextSendAt: string | null;
@@ -57,6 +58,7 @@ type AiReplyCampaign = {
   userId: string | null;
   name: string;
   token: string;
+  tokenConfigured?: boolean;
   persona: string;
   mode: "ai" | "fixed";
   fixedMessage: string;
@@ -178,7 +180,7 @@ function useDeleteAiReplyCampaign() {
 function useCreateCampaign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { name: string; token: string; channels: string[]; message: string; delay: number; jitter: number }) => {
+    mutationFn: async (data: { name: string; token: string; channels: string[]; message: string; delay: number; jitter: number; sendWindowStart?: string | null; sendWindowEnd?: string | null; rotateEnabled?: boolean }) => {
       const res = await fetch(`${API}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) {
         let msg = "Failed to create campaign";
@@ -723,21 +725,21 @@ export default function Home() {
 
   const [activeView, setActiveView] = useLocalState<View>("bb_view", "dashboard");
 
-  const [drafts, setDrafts] = useLocalState<Record<number | string, {
+  const [drafts, setDrafts] = useState<Record<number | string, {
     name: string; token: string; channelsInput: string; message: string; commandsEnabled?: boolean;
     delay: number; jitter: number; expanded: boolean; editMode: boolean; tokenValid: boolean | null;
     sendWindowStart: string; sendWindowEnd: string;
     rotateEnabled: boolean;
-  }>>("bb_drafts", {});
+  }>>({});
 
   const [showNewForm, setShowNewForm] = useState(false);
-  const [newForm, setNewForm] = useLocalState("bb_new_form", { name: "Campaign 1", token: "", channelsInput: "", message: "", commandsEnabled: false, delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
+  const [newForm, setNewForm] = useState({ name: "Campaign 1", token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
 
-  const [tokenInput, setTokenInput] = useLocalState("bb_token_input", "");
-  const [tokenInfo, setTokenInfo] = useLocalState<TokenValidationResult | null>("bb_token_info", null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [tokenInfo, setTokenInfo] = useState<TokenValidationResult | null>(null);
 
   // Presence & Warmup state
-  const [presenceToken, setPresenceToken] = useLocalState("bb_presence_token", "");
+  const [presenceToken, setPresenceToken] = useState("");
   const [presenceStatus, setPresenceStatus] = useLocalState<"online" | "idle" | "dnd">("bb_presence_status", "online");
   const [presenceActive, setPresenceActive] = useState(false);
   const { data: presenceServerStatus, refetch: refetchPresenceStatus } = useQuery<{ connected: boolean; status: "online" | "idle" | "dnd" | null; desiredOpen: boolean }>({
@@ -755,7 +757,7 @@ export default function Home() {
     enabled: !!presenceToken,
     refetchInterval: presenceToken ? 5000 : false,
   });
-  const [warmupToken, setWarmupToken] = useLocalState("bb_warmup_token", "");
+  const [warmupToken, setWarmupToken] = useState("");
   const [warmupActive, setWarmupActive] = useState(false);
 
   // AI Reply — local state, synced to server
@@ -777,6 +779,12 @@ export default function Home() {
   const [dms, setDMs] = useState<DMConversation[]>([]);
   const autoActive = !!(autoReplyServerStatus?.active);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  useEffect(() => {
+    for (const key of ["bb_drafts", "bb_new_form", "bb_token_input", "bb_token_info", "bb_presence_token", "bb_warmup_token"]) {
+      try { localStorage.removeItem(key); } catch {}
+    }
+  }, []);
 
   // Load user settings from server once
   useEffect(() => {
@@ -824,7 +832,7 @@ export default function Home() {
         if (!existing || !existing.editMode) {
           next[c.id] = {
             name: c.name,
-            token: c.token,
+             token: "",
             channelsInput: c.channels.join("\n"),
             message: c.message,
             delay: c.delay,
@@ -896,9 +904,9 @@ export default function Home() {
     const sendWindowEnd = normalizeSendWindow(newForm.sendWindowEnd);
     try {
     const created = await createCampaign.mutateAsync({ name: newForm.name, token: newForm.token, channels, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: newForm.rotateEnabled } as Parameters<typeof createCampaign.mutateAsync>[0]);
-      setDraft(created.id, { name: newForm.name, token: newForm.token, channelsInput: newForm.channelsInput, message: newForm.message, commandsEnabled: newForm.commandsEnabled, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd, rotateEnabled: newForm.rotateEnabled });
+      setDraft(created.id, { name: newForm.name, token: "", channelsInput: newForm.channelsInput, message: newForm.message, delay: newForm.delay, jitter: newForm.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: newForm.sendWindowStart, sendWindowEnd: newForm.sendWindowEnd, rotateEnabled: newForm.rotateEnabled });
       setShowNewForm(false);
-      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", commandsEnabled: false, delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
+      setNewForm({ name: `Campaign ${campaigns.length + 2}`, token: "", channelsInput: "", message: "", delay: 15, jitter: 0, sendWindowStart: "", sendWindowEnd: "", rotateEnabled: true });
       toast({ title: "Campaign Created", description: created.name });
     } catch (err) { toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to create campaign.", variant: "destructive" }); }
   };
@@ -910,7 +918,7 @@ export default function Home() {
     const sendWindowStart = normalizeSendWindow(draft.sendWindowStart);
     const sendWindowEnd = normalizeSendWindow(draft.sendWindowEnd);
     try {
-      await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+      await updateCampaign.mutateAsync({ id, name: draft.name, ...(draft.token.trim() ? { token: draft.token } : {}), channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       setDraft(id, { editMode: false });
       toast({ title: "Saved", description: "Changes will take effect on next send cycle." });
     } catch (err) {
@@ -925,7 +933,7 @@ export default function Home() {
       const sendWindowStart = normalizeSendWindow(draft.sendWindowStart);
       const sendWindowEnd = normalizeSendWindow(draft.sendWindowEnd);
       try {
-        await updateCampaign.mutateAsync({ id, name: draft.name, token: draft.token, channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+        await updateCampaign.mutateAsync({ id, name: draft.name, ...(draft.token.trim() ? { token: draft.token } : {}), channels, message: draft.message, delay: draft.delay, jitter: draft.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
       } catch (err) {
         toast({ title: "Save Failed — Campaign Not Started", description: err instanceof Error ? err.message : "Failed to save before starting.", variant: "destructive" });
         return;
@@ -953,7 +961,7 @@ export default function Home() {
   const handleDuplicate = async (id: number) => {
     try {
       const created = await duplicateCampaign.mutateAsync(id);
-      setDraft(created.id, { name: created.name, token: created.token, channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: created.jitter, expanded: true, editMode: false, tokenValid: null, sendWindowStart: created.sendWindowStart ?? "", sendWindowEnd: created.sendWindowEnd ?? "", rotateEnabled: created.rotateEnabled });
+      setDraft(created.id, { name: created.name, token: "", channelsInput: created.channels.join("\n"), message: created.message, delay: created.delay, jitter: 0, expanded: true, editMode: false, tokenValid: null, sendWindowStart: created.sendWindowStart ?? "", sendWindowEnd: created.sendWindowEnd ?? "", rotateEnabled: created.rotateEnabled });
       toast({ title: "Campaign Duplicated", description: created.name });
     } catch { toast({ title: "Error", description: "Failed to duplicate.", variant: "destructive" }); }
   };
@@ -976,7 +984,7 @@ export default function Home() {
         const channels = draft!.channelsInput.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean);
         const sendWindowStart = normalizeSendWindow(draft!.sendWindowStart);
         const sendWindowEnd = normalizeSendWindow(draft!.sendWindowEnd);
-        await updateCampaign.mutateAsync({ id, name: draft!.name, token: draft!.token, channels, message: draft!.message, delay: draft!.delay, jitter: draft!.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft!.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
+        await updateCampaign.mutateAsync({ id, name: draft!.name, ...(draft!.token.trim() ? { token: draft!.token } : {}), channels, message: draft!.message, delay: draft!.delay, jitter: draft!.jitter, sendWindowStart, sendWindowEnd, rotateEnabled: draft!.rotateEnabled } as Parameters<typeof updateCampaign.mutateAsync>[0]);
         setDraft(id, { editMode: false });
       } catch (err) {
         toast({ title: "Save Failed", description: err instanceof Error ? err.message : "Could not save before testing.", variant: "destructive" });
@@ -1060,7 +1068,7 @@ export default function Home() {
   const handleApplyAiReplyCampaign = (campaign: AiReplyCampaign) => {
     setSelectedAiReplyCampaignId(campaign.id);
     setAiReplyCampaignName(campaign.name);
-    setAiToken(campaign.token);
+    if (campaign.token) setAiToken(campaign.token);
     setAiPersona(campaign.persona);
     setAiReplyMode(campaign.mode);
     setFixedAutoReply(campaign.fixedMessage);
@@ -1363,10 +1371,6 @@ export default function Home() {
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1">Use times like 9:00 AM or 5:30 PM. Leave empty to send 24/7.</p>
                     </div>
-                    <div>
-                      <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Commands</Label>
-                      <Textarea value={newForm.message} onChange={(e) => setNewForm((p) => ({ ...p, message: e.target.value }))} className="min-h-[60px] text-sm resize-y bg-input border-border rounded-xl" placeholder="Commands to send..." />
-                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1 block">Interval (s)</Label>
@@ -1392,8 +1396,21 @@ export default function Home() {
                 <div className="text-center py-16 text-muted-foreground text-sm border border-dashed border-border/50 rounded-xl">No campaigns yet. Click "Add Campaign" to create one.</div>
               )}
 
-              {campaigns.map((campaign) => {
-                const draft = getDraft(campaign.id);
+               {campaigns.map((campaign) => {
+                 const draft = getDraft(campaign.id) ?? {
+                   name: campaign.name,
+                   token: "",
+                   channelsInput: campaign.channels.join("\n"),
+                   message: campaign.message,
+                   delay: campaign.delay,
+                   jitter: campaign.jitter,
+                   expanded: true,
+                   editMode: false,
+                   tokenValid: null,
+                   sendWindowStart: campaign.sendWindowStart ?? "",
+                   sendWindowEnd: campaign.sendWindowEnd ?? "",
+                   rotateEnabled: campaign.rotateEnabled,
+                 };
                 const inEditMode = draft?.editMode ?? false;
                 const displayDelay = campaign.delay + campaign.rateLimitBonus;
 
@@ -1515,7 +1532,7 @@ export default function Home() {
                               {draft.tokenValid === false && <span className="text-red-400 flex items-center gap-1 text-[9px]"><XCircle className="w-3 h-3" />Invalid</span>}
                             </Label>
                             <div className="flex gap-1.5">
-                              <Input type="password" value={draft.token} onChange={(e) => setDraft(campaign.id, { token: e.target.value, tokenValid: null })} className="h-8 font-mono text-xs bg-input border-border rounded-xl flex-1" placeholder="Discord user token..." />
+                              <Input type="password" value={draft.token} onChange={(e) => setDraft(campaign.id, { token: e.target.value, tokenValid: null })} className="h-8 font-mono text-xs bg-input border-border rounded-xl flex-1" placeholder={campaign.tokenConfigured ? "Saved token — enter replacement to change" : "Discord user token..."} />
                               <Button size="sm" variant="outline" className="h-8 px-2 text-xs border-border rounded-xl shrink-0" onClick={() => handleValidateCampaignToken(campaign.id, draft.token)} disabled={!draft.token || validateTokenMutation.isPending}>Check</Button>
                             </div>
                           </div>

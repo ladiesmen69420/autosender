@@ -30,12 +30,14 @@ export function isWarmupActive(token: string): boolean {
     s.active = false;
     if (s.ticker) clearTimeout(s.ticker);
     s.ticker = null;
+    WARMUPS.delete(token);
     return false;
   }
   return true;
 }
 
 export function getWarmupState(token: string) {
+  isWarmupActive(token);
   const s = WARMUPS.get(token);
   if (!s) {
     return {
@@ -150,6 +152,7 @@ function scheduleNext(token: string, s: WarmupState) {
   if (!s.active) return;
   if (Date.now() >= s.endsAt) {
     s.active = false;
+    WARMUPS.delete(token);
     logger.info({ token: token.slice(0, 8) + "…" }, "Warmup completed");
     return;
   }
@@ -167,7 +170,7 @@ function scheduleNext(token: string, s: WarmupState) {
 }
 
 export function startWarmup(token: string, days: number): { ok: boolean; endsAt: number } {
-  if (!token || !Number.isFinite(days) || days <= 0) {
+  if (!token || !Number.isFinite(days) || days <= 0 || days > 30) {
     return { ok: false, endsAt: 0 };
   }
   // Cancel any prior warmup

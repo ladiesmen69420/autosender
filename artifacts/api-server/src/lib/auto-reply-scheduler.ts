@@ -139,7 +139,15 @@ async function runScan(userId: string, state: SessionState): Promise<void> {
   if (state.running) return;
   state.running = true;
 
-  const [row] = await db.select().from(autoReplySessionsTable).where(eq(autoReplySessionsTable.userId, userId)).limit(1);
+  let row: typeof autoReplySessionsTable.$inferSelect | undefined;
+  try {
+    [row] = await db.select().from(autoReplySessionsTable).where(eq(autoReplySessionsTable.userId, userId)).limit(1);
+  } catch (err) {
+    state.lastError = `Could not load auto-reply settings: ${err instanceof Error ? err.message : String(err)}`;
+    state.running = false;
+    logger.error({ userId, err }, "auto-reply-scheduler: failed to load session");
+    return;
+  }
   if (!row || !row.enabled || !row.token) {
     state.running = false;
     return;

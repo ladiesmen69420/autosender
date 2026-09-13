@@ -1,7 +1,11 @@
 import { Router, type Request } from "express";
 import { createClerkClient } from "@clerk/express";
+import { randomBytes } from "node:crypto";
+import { logger } from "../lib/logger";
 
 const router = Router();
+const oauthStates = new Map<string, number>();
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 function getBaseUrl(req: Request): string {
   const proto = req.headers["x-forwarded-proto"] ?? req.protocol ?? "https";
@@ -23,19 +27,33 @@ router.get("/discord", (req, res) => {
   }
 
   const redirectUri = getDiscordRedirectUri(req);
+  const state = randomBytes(32).toString("hex");
+  oauthStates.set(state, Date.now() + OAUTH_STATE_TTL_MS);
+  for (const [savedState, expiresAt] of oauthStates) {
+    if (expiresAt <= Date.now()) oauthStates.delete(savedState);
+  }
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "identify email",
+    state,
   });
 
   res.redirect(`https://discord.com/oauth2/authorize?${params}`);
 });
 
 router.get("/discord/callback", async (req, res) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
   const baseUrl = getBaseUrl(req);
+
+  const savedExpiry = typeof state === "string" ? oauthStates.get(state) : undefined;
+  if (typeof state !== "string" || !savedExpiry || savedExpiry <= Date.now()) {
+    if (typeof state === "string") oauthStates.delete(state);
+    res.redirect(`${baseUrl}/?auth_error=invalid_state`);
+    return;
+  }
+  oauthStates.delete(state);
 
   if (error || !code) {
     res.redirect(`${baseUrl}/?auth_error=cancelled`);
@@ -64,20 +82,21 @@ router.get("/discord/callback", async (req, res) => {
     const userRes = await fetch("https://discord.com/api/v10/users/@me", {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
+    if (!userRes.ok) throw new Error("Failed to verify Discord identity");
     const discordUser = await userRes.json() as {
-      id: string; username: string; email?: string; discriminator?: string;
+      id: string; username: string; email?: string; verified?: boolean; discriminator?: string;
     };
 
-    if (!discordUser.id) throw new Error("Failed to get Discord user info");
+    if (!discordUser.id || !discordUser.email || discordUser.verified !== true) {
+      throw new Error("Discord returned an unverified or incomplete identity");
+    }
 
     const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
     let clerkUser;
 
-    if (discordUser.email) {
-      const found = await clerk.users.getUserList({ emailAddress: [discordUser.email] });
-      clerkUser = found.data[0];
-    }
+    const found = await clerk.users.getUserList({ emailAddress: [discordUser.email] });
+    clerkUser = found.data[0];
 
     if (!clerkUser) {
       const createParams: Parameters<typeof clerk.users.createUser>[0] = {
@@ -85,10 +104,8 @@ router.get("/discord/callback", async (req, res) => {
         firstName: discordUser.username,
         skipPasswordRequirement: true,
       };
-      if (discordUser.email) {
-        createParams.emailAddress = [discordUser.email];
-        createParams.skipPasswordRequirement = true;
-      }
+      createParams.emailAddress = [discordUser.email];
+      createParams.skipPasswordRequirement = true;
       clerkUser = await clerk.users.createUser(createParams);
     }
 
@@ -99,7 +116,7 @@ router.get("/discord/callback", async (req, res) => {
 
     res.redirect(`${baseUrl}/discord-signin?token=${encodeURIComponent(signInToken.token)}`);
   } catch (err) {
-    console.error("Discord OAuth error:", err);
+    logger.error({ err }, "Discord OAuth error");
     res.redirect(`${baseUrl}/?auth_error=failed`);
   }
 });
