@@ -188,7 +188,34 @@ router.post("/", async (req, res) => {
     res.status(201).json(serializeCampaign(row, 0));
   } catch (err) {
     req.log.error({ campaignName: name, err }, "Failed to insert campaign");
-    res.status(500).json({ error: "Failed to create campaign", details: "A database error occurred. Please try again." });
+
+    // Drizzle can wrap a PostgreSQL failure in an Error.cause.
+    // Report safe, actionable diagnostics without exposing SQL or tokens.
+    let cause: unknown = err;
+    for (let i = 0; i < 3 && cause && typeof cause === "object" && "cause" in cause; i++) {
+      cause = (cause as { cause?: unknown }).cause;
+    }
+    const dbCode = cause && typeof cause === "object" && "code" in cause
+      ? String((cause as { code?: unknown }).code)
+      : null;
+    if (dbCode === "42P01" || dbCode === "42703") {
+      res.status(503).json({
+        error: "Campaign database schema is not ready",
+        details: "Campaign tables or columns are missing. Verify DATABASE_URL and run pnpm --filter @workspace/db run push on the correct database.",
+      });
+      return;
+    }
+    if (dbCode === "ECONNREFUSED" || dbCode === "ENOTFOUND" || dbCode === "ETIMEDOUT") {
+      res.status(503).json({
+        error: "Campaign database is unavailable",
+        details: "Cannot connect to the database. Verify DATABASE_URL and database service status.",
+      });
+      return;
+    }
+    res.status(500).json({
+      error: "Failed to create campaign",
+      details: "A database error occurred. Check API server logs for details.",
+    });
   }
 });
 
