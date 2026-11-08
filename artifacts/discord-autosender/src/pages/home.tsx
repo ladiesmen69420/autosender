@@ -182,14 +182,25 @@ function useCreateCampaign() {
   return useMutation({
     mutationFn: async (data: { name: string; token: string; channels: string[]; message: string; delay: number; jitter: number; sendWindowStart?: string | null; sendWindowEnd?: string | null; rotateEnabled?: boolean }) => {
       const res = await fetch(`${API}/campaigns`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const contentType = res.headers.get("content-type") || "";
       if (!res.ok) {
-        let msg = "Failed to create campaign";
-        try {
-          const body = await res.json() as { error?: string; details?: string };
-          if (body.details) msg = body.details;
-          else if (body.error) msg = body.error;
-        } catch { /* ignore parse error, use default msg */ }
+        let msg = `Could not create campaign (HTTP ${res.status})`;
+        if (contentType.includes("json")) {
+          try {
+            const body = await res.json() as { error?: string; details?: string };
+            msg = body.details || body.error || msg;
+          } catch { /* malformed API response */ }
+        } else if (res.status === 404) {
+          msg = "Campaign API not found (HTTP 404). Check /api routing and the API server deployment.";
+        } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+          msg = `Campaign API unavailable (HTTP ${res.status}). Check the API server and database connection.`;
+        } else if (res.status >= 500) {
+          msg = `Campaign API error (HTTP ${res.status}). Check the API server logs.`;
+        }
         throw new Error(msg);
+      }
+      if (!contentType.includes("json")) {
+        throw new Error("Campaign API returned a non-JSON response. Check /api routing and the API server deployment.");
       }
       return res.json() as Promise<ServerCampaign>;
     },
