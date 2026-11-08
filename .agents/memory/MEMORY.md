@@ -1,0 +1,1 @@
+- [CORS behind the artifact proxy](cors-origin-handling.md) — allow the exact same-origin request and reject other origins without turning CORS denials into server errors.

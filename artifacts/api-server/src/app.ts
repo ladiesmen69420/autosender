@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
@@ -37,20 +37,38 @@ const configuredOrigins = new Set([
   ...(process.env.NODE_ENV !== "production" ? ["http://localhost:5173", "http://127.0.0.1:5173"] : []),
 ].map((origin) => origin.trim()).filter(Boolean));
 
-app.use(cors({
-  credentials: true,
-  origin: (origin, callback) => {
-    if (!origin) {
-      callback(null, true);
-      return;
-    }
-    if (configuredOrigins.has(origin)) {
-      callback(null, true);
-      return;
-    }
-    callback(new Error("Origin is not allowed by CORS"));
-  },
-}));
+function getRequestOrigin(req: Request): string | null {
+  const host = (req.get("x-forwarded-host") ?? req.get("host") ?? "").split(",")[0].trim();
+  const protocol = (req.get("x-forwarded-proto") ?? req.protocol ?? "https")
+    .split(",")[0]
+    .trim()
+    .replace(/:$/, "");
+  if (!host || (protocol !== "http" && protocol !== "https")) return null;
+
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return null;
+  }
+}
+
+app.use((req, res, next) => {
+  const requestOrigin = getRequestOrigin(req);
+  cors({
+    credentials: true,
+    origin: (origin, callback) => {
+      if (!origin || configuredOrigins.has(origin) || origin === requestOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      // A disallowed browser origin should fail its CORS check, not turn into
+      // an application 500. Sensitive API routes still enforce Clerk auth.
+      req.log.warn({ origin, method: req.method, path: req.path }, "CORS origin rejected");
+      callback(null, false);
+    },
+  })(req, res, next);
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
